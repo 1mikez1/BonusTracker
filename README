@@ -100,6 +100,36 @@ At a high level, the system manages:
   * Supabase CLI (for local dev & migrations)
   * Optional: Docker (for local Supabase via CLI)
 
+### 2.3 Running the web dashboard locally
+
+The repository now includes a production-ready Next.js dashboard that mirrors the operational blueprint defined in this
+document.
+
+1. Install dependencies:
+
+   ```bash
+   pnpm install # or npm install / yarn install
+   ```
+
+2. Create an `.env.local` file in the project root with your Supabase credentials (or leave empty to use bundled demo data):
+
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=public-anon-key
+   ```
+
+   When the environment variables are absent the UI boots in **demo mode**, seeding the widgets and tables with realistic
+   sample data so operators can explore the workflow offline.
+
+3. Start the app:
+
+   ```bash
+   pnpm dev # or npm run dev / yarn dev
+   ```
+
+4. The dashboard will be available at `http://localhost:3000` with navigation covering clients, apps, pipeline, referral
+   links, debts, requests, payment links, slots and guide messages.
+
 ---
 
 ## 3. Repository Structure

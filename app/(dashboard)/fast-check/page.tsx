@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ErrorMessage } from '@/components/ErrorMessage';
 import Link from 'next/link';
-import { supabaseClient } from '@/lib/supabaseClient';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 interface FastCheckIssue {
   type: 'overdue_deadline' | 'due_soon' | 'stale_update' | 'missing_deposit' | 'pending_document';
@@ -46,7 +46,7 @@ export default function FastCheckPage() {
       setIsLoading(true);
       setError(null);
 
-      const supabase = supabaseClient();
+      const supabase = getSupabaseClient();
       if (!supabase) {
         throw new Error('Supabase client not initialized');
       }

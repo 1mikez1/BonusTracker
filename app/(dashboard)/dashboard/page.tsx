@@ -7,7 +7,7 @@ import { ErrorMessage } from '@/components/ErrorMessage';
 import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/StatusBadge';
 import Link from 'next/link';
-import { supabaseClient } from '@/lib/supabaseClient';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 
 interface ClientError {
   id: string;
@@ -198,7 +198,7 @@ export default function UnifiedDashboardPage() {
   const runErrorDetection = async () => {
     try {
       setIsDetecting(true);
-      const supabase = supabaseClient();
+      const supabase = getSupabaseClient();
       if (!supabase) {
         throw new Error('Supabase client not initialized');
       }

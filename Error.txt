@@ -1,0 +1,303 @@
+E:\Bonus\BonusTracker\BonusTracker>npx tsx scripts/migrate-all-data.ts
+🚀 Starting complete Excel to Supabase migration...
+
+
+📊 Step 1: Migrating tiers...
+  ✓ Tier TOP ready
+  ✓ Tier TIER 1 ready
+  ✓ Tier TIER 2 ready
+  ✓ Tier 20IQ ready
+
+📱 Step 2: Migrating apps...
+  ✓ App REVOLUT ready
+  ✓ App BBVA ready
+  ✓ App ISYBANK ready
+  ✓ App BYBIT ready
+  ✓ App KRAKEN ready
+  ✓ App TRADING212 ready
+  ✓ App BUDDYBANK ready
+  ✓ App SISAL ready
+  ✓ App POKERSTARS ready
+  ✓ App ROBINHOOD ready
+  ✓ App COINBASE ready
+  ✓ App SKRILL ready
+  ✓ App TINABA ready
+  ✓ App TRADEREPUBLIC ready
+  ✓ App OKX ready
+  ✓ App BUNQ ready
+  ✓ App HYPE ready
+  ✓ App BRIGHTY ready
+  ✓ App DEBLOCK ready
+
+👥 Step 3: Migrating clients from TIER CLIENTI...
+  ✓ Processed 116 clients from tiers
+
+📝 Step 4: Migrating requests (MODULO)...
+  ✓ Migrated 47 requests
+
+📋 Step 5: Migrating client-apps from per-app sheets...
+  ✓ REVOLUT: 51 client-apps
+  ✓ BBVA: 83 client-apps
+  ✓ ISYBANK: 4 client-apps
+  ✓ BYBIT: 24 client-apps
+  ✓ KRAKEN: 39 client-apps
+  ✓ TRADING212: 33 client-apps
+  ✓ BUDDYBANK: 93 client-apps
+  ✓ SISAL: 76 client-apps
+  ✓ POKERSTARS: 8 client-apps
+  ✓ Total: 411 client-apps migrated
+
+🔗 Step 6: Migrating referral links...
+  ✓ Migrated 0 referral links
+
+🔐 Step 7: Migrating credentials...
+  ✓ Migrated 0 credentials
+
+🎁 Step 8: Migrating promotions...
+Error creating promotion for REVOLUT: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for ROBINHOOD: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for OKX: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for TRADEREPUBLIC: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for BUDDYBANK: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for ISYBANK: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for BBVA: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for SKRILL: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for KRAKEN: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for COINBASE: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for TINABA: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for HYPE: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for SISAL: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for POKERSTARS: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating promotion for TRADING212: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+  ✓ Migrated 0 promotions
+
+💰 Step 9: Migrating debts...
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (bbcc366c-6a48-451c-bb6a-f86086176973, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 6757.00, open, 38, 2025-11-14 13:27:49.268535+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (0516a637-9f22-4708-a26b-a82718e41d0b, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 162.00, open, 43, 2025-11-14 13:27:49.695901+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (b65f74ef-fda4-4d6a-9cb9-32a42c1ef5dd, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 70.46, open, 35, 2025-11-14 13:27:50.096577+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (94712b9f-0132-438f-92f6-2261eaa0b54b, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 72.00, open, 34, 2025-11-14 13:27:50.588011+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (67151af6-74dc-4967-a1bf-2f5c91cc8c3d, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 210.00, open, 0, 2025-11-14 13:27:51.053558+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+Error creating debt: {
+  code: '23502',
+  details: 'Failing row contains (dd353775-bf53-43a1-9a20-8c0fed187f99, null, 033aea2b-a939-404f-b60e-7bfa96a495c8, null, 71.00, open, 29, 2025-11-14 13:27:51.470053+00, null).',
+  hint: null,
+  message: 'null value in column "referral_link_id" of relation "referral_link_debts" violates not-null constraint'    
+}
+  ✓ Migrated 0 debts
+
+💳 Step 10: Migrating payment links...
+  ✓ Migrated 5 payment links
+
+🎰 Step 11: Migrating slots...
+Error creating slot rome fight for gold: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot royal fortunator: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot massive gold: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot fire and roses joker: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot legion gold: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot dirty dawgs: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot gold hit lil demon: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot Wild panther: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot golden winner: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot thunder coins: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot tomb of gold: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot book of toro: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot gladiatoro: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot 4 fowl play: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot pirots 2,3,4: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+Error creating slot Jungle Olympics: {
+  code: '42P10',
+  details: null,
+  hint: null,
+  message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+}
+  ✓ Migrated 0 slots
+
+📧 Step 12: Migrating message templates...
+  ✓ Migrated 2 message templates
+
+✅ Migration completed successfully!
+
+📊 Summary:
+  - Tiers: 4
+  - Apps: 19
+  - Clients: 330
+
+💡 Next steps:
+  1. Review the data in Supabase dashboard
+  2. Update any missing relationships manually
+  3. Test the application with real data

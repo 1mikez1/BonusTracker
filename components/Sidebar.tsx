@@ -4,9 +4,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const links = [
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/clients', label: 'Clients' },
-  { href: '/apps', label: 'Apps & Promotions' },
+  { href: '/apps', label: 'Apps' },
+  { href: '/promotions', label: 'Promotions' },
   { href: '/pipeline', label: 'Pipeline' },
+  { href: '/deadlines', label: 'Deadlines' },
+  { href: '/fast-check', label: 'Fast-Check' },
   { href: '/referral-links', label: 'Referral Links' },
   { href: '/debts', label: 'Debts' },
   { href: '/requests', label: 'Requests' },

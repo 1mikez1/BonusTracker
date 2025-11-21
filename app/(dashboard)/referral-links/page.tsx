@@ -1,24 +1,39 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { SectionHeader } from '@/components/SectionHeader';
 import { DataTable } from '@/components/DataTable';
 import { FiltersBar } from '@/components/FiltersBar';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { ErrorMessage } from '@/components/ErrorMessage';
+import { EmptyState } from '@/components/EmptyState';
+import { Pagination } from '@/components/Pagination';
 
 export default function ReferralLinksPage() {
-  const { data: referralLinks } = useSupabaseData({ table: 'referral_links' });
+  const {
+    data: referralLinks,
+    isLoading,
+    error,
+    mutate,
+    isDemo
+  } = useSupabaseData({
+    table: 'referral_links',
+    select: '*, apps(*), clients!owner_client_id(*)'
+  });
+  
   const { data: apps } = useSupabaseData({ table: 'apps' });
-  const { data: clients } = useSupabaseData({ table: 'clients' });
 
   const [appFilter, setAppFilter] = useState('all');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const rows = useMemo(() => {
-    return referralLinks.map((link) => {
-      const app = apps.find((item) => item.id === link.app_id);
-      const owner = clients.find((client) => client.id === link.owner_client_id ?? '');
+    return referralLinks.map((link: any) => {
+      const app = link.apps;
+      const owner = link.clients;
       const remaining = link.max_uses ? Math.max(link.max_uses - link.current_uses, 0) : undefined;
       return {
         ...link,
@@ -27,7 +42,7 @@ export default function ReferralLinksPage() {
         remaining
       };
     });
-  }, [referralLinks, apps, clients]);
+  }, [referralLinks]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -49,6 +64,38 @@ export default function ReferralLinksPage() {
       return true;
     });
   }, [rows, appFilter, ownerFilter, statusFilter]);
+
+  // Paginate filtered rows
+  const paginatedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredRows.slice(startIndex, endIndex);
+  }, [filteredRows, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(filteredRows.length / pageSize);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [appFilter, ownerFilter, statusFilter]);
+
+  if (isLoading) {
+    return (
+      <div>
+        <SectionHeader title="Referral links" description="Loading referral links..." />
+        <LoadingSpinner message="Loading referral links..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <SectionHeader title="Referral links" description="Error loading referral links" />
+        <ErrorMessage error={error} onRetry={mutate} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -76,8 +123,19 @@ export default function ReferralLinksPage() {
           <option value="inactive">Inactive</option>
         </select>
       </FiltersBar>
-      <DataTable
-        data={filteredRows}
+      {filteredRows.length === 0 ? (
+        <EmptyState
+          title="No referral links found"
+          message={
+            appFilter !== 'all' || ownerFilter !== 'all' || statusFilter !== 'all'
+              ? 'No referral links match your current filters.'
+              : 'No referral links have been added yet.'
+          }
+        />
+      ) : (
+        <>
+        <DataTable
+          data={paginatedRows}
         columns={[
           { key: 'appName', header: 'App' },
           {
@@ -113,7 +171,19 @@ export default function ReferralLinksPage() {
           },
           { key: 'notes', header: 'Notes', render: (row) => row.notes ?? '—' }
         ]}
-      />
+        />
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            pageSize={pageSize}
+            totalItems={filteredRows.length}
+            onPageSizeChange={setPageSize}
+          />
+        )}
+        </>
+      )}
     </div>
   );
 }

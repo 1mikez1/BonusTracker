@@ -1,5 +1,36 @@
 ````markdown
-# BH Referral & Bonus Management Web App
+# # BH Referral & Bonus Management Web App
+
+## Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables:**
+   - Create `.env.local` in the root directory
+   - Add your Supabase credentials (see `QUICK_SETUP.md` for details)
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+   ```
+
+3. **Start development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Open http://localhost:3000**
+
+For detailed setup instructions, see `QUICK_SETUP.md` or `SETUP_ENVIRONMENT.md`.
+
+## Documentation
+
+- `QUICK_SETUP.md` - Quick start guide
+- `SETUP_ENVIRONMENT.md` - Detailed environment setup
+- `MIGRATION_GUIDE.md` - Data migration instructions
+- `IMPLEMENTATION_STATUS.md` - Current implementation status
 
 Internal web app for managing **referral-based signup flows and bonus farming** across multiple apps (banks, CEXs, betting, trading, etc.), built on **Supabase** (Postgres + Auth + Storage + Edge Functions) with a **React/Next.js** frontend.
 

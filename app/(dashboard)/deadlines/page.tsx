@@ -16,12 +16,12 @@ interface ClientAppWithDeadline {
   started_at?: string | null; // Optional - only available after migration 0026
   deadline_at?: string | null; // Optional - only available after migration 0026
   status: string;
-  apps: {
+  apps?: {
     id: string;
     name: string;
     deadline_days?: number | null; // Optional - only available after migration
   } | null;
-  clients: {
+  clients?: {
     id: string;
     name: string;
     surname: string | null;

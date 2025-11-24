@@ -974,7 +974,7 @@ export function NewSignupModal({
               </button>
               <button
                 onClick={handleSubmit}
-                  disabled={
+                  disabled={Boolean(
                     isSaving || 
                     !selectedAppId || 
                     checkingExisting ||
@@ -984,9 +984,9 @@ export function NewSignupModal({
                         ? existingClientApp[0] 
                         : null;
                       const existingAppId = existingApp ? (existingApp as any)?.app_id : null;
-                      return existingApp && existingAppId === selectedAppId;
+                      return !!(existingApp && existingAppId === selectedAppId);
                     })()
-                  }
+                  )}
                 style={{
                   flex: 1,
                   padding: '0.75rem',

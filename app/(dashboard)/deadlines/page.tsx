@@ -12,13 +12,14 @@ type DeadlineStatus = 'overdue' | 'due_48h' | 'in_progress' | 'completed';
 
 interface ClientAppWithDeadline {
   id: string;
-  started_at: string | null;
-  deadline_at: string | null;
+  created_at: string;
+  started_at?: string | null; // Optional - only available after migration 0026
+  deadline_at?: string | null; // Optional - only available after migration 0026
   status: string;
   apps: {
     id: string;
     name: string;
-    deadline_days: number | null;
+    deadline_days?: number | null; // Optional - only available after migration
   } | null;
   clients: {
     id: string;
@@ -31,13 +32,11 @@ export default function DeadlinesPage() {
   const [filterStatus, setFilterStatus] = useState<DeadlineStatus | 'all'>('all');
 
   // Fetch client_apps with deadlines
+  // Note: started_at and deadline_at are optional until migration 0026 is applied
   const { data: clientApps, isLoading, error, mutate } = useSupabaseData<ClientAppWithDeadline>({
     table: 'client_apps',
-    select: 'id, started_at, deadline_at, status, apps(id, name, deadline_days), clients!client_id(id, name, surname)',
-    filters: {
-      deadline_at: { not: { is: null } }
-    },
-    order: { column: 'deadline_at', ascending: true }
+    select: 'id, created_at, status, apps(id, name), clients!client_id(id, name, surname)',
+    order: { column: 'created_at', ascending: true }
   });
 
   // Categorize deadlines

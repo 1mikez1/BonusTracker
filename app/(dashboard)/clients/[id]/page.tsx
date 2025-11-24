@@ -735,7 +735,7 @@ export default function ClientDetailPage() {
         referral_link_id: debtReferralLinkId,
         creditor_client_id: clientId,
         debtor_client_id: debtDebtorClientId || null,
-        amount: debtAmount,
+        amount: parseFloat(debtAmount),
         status: debtStatus,
         description: debtDescription || null
       };

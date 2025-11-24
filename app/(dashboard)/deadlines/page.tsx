@@ -33,7 +33,7 @@ export default function DeadlinesPage() {
 
   // Fetch client_apps with deadlines
   // Note: started_at and deadline_at are optional until migration 0026 is applied
-  const { data: clientApps, isLoading, error, mutate } = useSupabaseData<ClientAppWithDeadline>({
+  const { data: clientApps, isLoading, error, mutate } = useSupabaseData({
     table: 'client_apps',
     select: 'id, created_at, status, apps(id, name), clients!client_id(id, name, surname)',
     order: { column: 'created_at', ascending: true }

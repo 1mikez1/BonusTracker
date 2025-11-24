@@ -993,7 +993,7 @@ export default function ClientDetailPage() {
       const paymentData = {
         provider: paymentProvider,
         url: paymentUrl,
-        amount: paymentAmount || null,
+        amount: paymentAmount ? parseFloat(paymentAmount) : null,
         purpose: paymentPurpose || null,
         client_id: clientId,
         app_id: paymentAppId || null,

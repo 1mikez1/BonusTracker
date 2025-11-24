@@ -41,7 +41,7 @@ export default function ClientsPage() {
   } = useSupabaseData({ 
     table: 'clients', 
     order: { column: 'created_at', ascending: false },
-    select: '*, tiers(*), clients!invited_by_client_id(*)'
+    select: '*, tiers(*)'
   });
   
   const {
@@ -54,21 +54,23 @@ export default function ClientsPage() {
     select: '*, apps(*), clients!client_id(*)'
   });
 
-  // Fetch client errors
+  // Fetch client errors (optional - table might not exist in all environments)
   const {
     data: clientErrors,
     isLoading: errorsLoading,
     error: errorsError
   } = useSupabaseData({ 
-    table: 'client_errors',
+    table: 'client_errors' as any,
     select: 'id, client_id, severity, error_type',
     filters: {
       resolved_at: { is: null }
     }
   });
 
-  const isLoading = clientsLoading || appsLoading || errorsLoading;
-  const error = clientsError || appsError || errorsError;
+  // Only block on clients and clientApps loading - clientErrors is optional
+  const isLoading = clientsLoading || appsLoading;
+  // Show error if critical queries fail, but don't block on client_errors errors
+  const error = clientsError || appsError;
 
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [trustedFilter, setTrustedFilter] = useState<string>('all');
@@ -86,9 +88,6 @@ export default function ClientsPage() {
       // Get tier from joined relationship
       const tier = client.tiers;
       const tierName = tier?.name;
-      
-      // Get invited_by client from joined relationship
-      const inviter = client.clients;
       
       // Filter client apps for this client
       const apps = clientAppsArray.filter((item: any) => item?.client_id === client.id);
@@ -267,10 +266,10 @@ export default function ClientsPage() {
                   <Link href={`/clients/${row.id}`} style={{ fontWeight: 600 }}>
                     {row.name} {row.surname ?? ''}
                   </Link>
-                  {row.error_count && row.error_count > 0 && (
+                  {(row.error_count ?? 0) > 0 && (
                     <span style={{
                       padding: '0.15rem 0.5rem',
-                      backgroundColor: row.critical_errors && row.critical_errors > 0 ? '#ef4444' : '#f59e0b',
+                      backgroundColor: (row.critical_errors ?? 0) > 0 ? '#ef4444' : '#f59e0b',
                       color: 'white',
                       borderRadius: '12px',
                       fontSize: '0.7rem',

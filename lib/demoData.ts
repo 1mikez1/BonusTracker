@@ -119,6 +119,7 @@ const sampleClientApps: Array<Table<'client_apps'>> = [
     profit_us: 20,
     created_at: now.toISOString(),
     completed_at: null,
+    completed_steps: null,
     notes: 'Bonus expected Friday'
   },
   {
@@ -136,6 +137,7 @@ const sampleClientApps: Array<Table<'client_apps'>> = [
     profit_us: null,
     created_at: now.toISOString(),
     completed_at: null,
+    completed_steps: null,
     notes: 'Awaiting futures volume'
   }
 ];

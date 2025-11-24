@@ -227,7 +227,7 @@ const sampleSlots: Array<Table<'slots'>> = [
     id: 'slot-1',
     name: 'Book of Ra Deluxe',
     provider: 'Novomatic',
-    rtp_percentage: '95.1',
+    rtp_percentage: 95.1,
     notes: 'High volatility'
   }
 ];

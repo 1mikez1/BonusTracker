@@ -37,7 +37,7 @@ export default function MessageTemplatesPage() {
   } = useSupabaseData({
     table: 'promotions',
     select: '*',
-    order: { column: 'end_date', ascending: true, nullsFirst: false }
+    order: { column: 'end_date', ascending: true }
   });
 
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);

@@ -185,7 +185,7 @@ export default function AppsPage() {
     const totalClients = filteredRows.reduce((sum, row) => sum + (row.clientApps?.length || 0), 0);
     // Count total referral links from all apps
     const totalReferralLinks = filteredRows.reduce((sum, row) => {
-      const app = apps.find((a: any) => a.id === row.id);
+      const app = apps.find((a: any) => a.id === row.id) as any;
       return sum + (app?.referral_links?.length || 0);
     }, 0);
     return [

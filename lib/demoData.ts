@@ -52,8 +52,7 @@ const sampleApps: Array<Table<'apps'>> = [
     app_type: 'bank',
     country: 'IT',
     is_active: true,
-    notes: 'Daily limit 5 signups',
-    created_at: now.toISOString()
+    notes: 'Daily limit 5 signups'
   },
   {
     id: 'app-bybit',
@@ -61,8 +60,7 @@ const sampleApps: Array<Table<'apps'>> = [
     app_type: 'crypto',
     country: 'EU',
     is_active: true,
-    notes: 'Monitor anti-fraud requests',
-    created_at: now.toISOString()
+    notes: 'Monitor anti-fraud requests'
   }
 ];
 

@@ -328,9 +328,9 @@ export default function AppsPage() {
             header: 'Client workflows',
             render: (row) => (
               <div>
-                <strong>{row.clientApps.length}</strong>
+                <strong>{row.clientApps?.length ?? 0}</strong>
                 <div style={{ marginTop: '0.35rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  {row.clientApps.slice(0, 3).map((entry: any) => {
+                  {(row.clientApps || []).slice(0, 3).map((entry: any) => {
                     const client = (entry as any).clients;
                     const clientName = client ? `${client.name} ${client.surname ?? ''}`.trim() : entry.client_id;
                     return (
@@ -339,7 +339,7 @@ export default function AppsPage() {
                       </span>
                     );
                   })}
-                  {row.clientApps.length > 3 ? <span style={{ color: '#94a3b8' }}>+ more</span> : null}
+                  {(row.clientApps?.length ?? 0) > 3 ? <span style={{ color: '#94a3b8' }}>+ more</span> : null}
                 </div>
               </div>
             )

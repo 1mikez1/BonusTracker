@@ -19,7 +19,7 @@ export default function MessageTemplatesPage() {
     mutate: mutateTemplates
   } = useSupabaseData({
     table: 'message_templates',
-    order: { column: 'step_order', ascending: true, nullsFirst: false },
+    order: { column: 'step_order', ascending: true },
     select: '*, apps(*)'
   });
   

@@ -207,7 +207,7 @@ export default function ClientsPage() {
           <option value="all">All tiers</option>
           {Array.isArray(clients) && Array.from(new Set(clients.map((c: any) => c.tier_id).filter(Boolean))).map((tierId) => {
             const client = clients.find((c: any) => c.tier_id === tierId);
-            const tier = client?.tiers;
+            const tier = (client as any)?.tiers;
             if (!tier) return null;
             return (
               <option key={tierId} value={tierId}>

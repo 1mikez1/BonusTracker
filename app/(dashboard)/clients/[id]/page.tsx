@@ -198,7 +198,7 @@ export default function ClientDetailPage() {
   } = useSupabaseData({
     table: 'promotions',
     select: '*',
-    order: { column: 'end_date', ascending: true, nullsFirst: false }
+    order: { column: 'end_date', ascending: true }
   });
 
   // All message templates for all apps (for showing incomplete steps)
@@ -208,7 +208,7 @@ export default function ClientDetailPage() {
   } = useSupabaseData({
     table: 'message_templates',
     select: '*',
-    order: { column: 'step_order', ascending: true, nullsFirst: false }
+    order: { column: 'step_order', ascending: true }
   });
 
   const isLoading = clientsLoading || appsLoading || debtsLoading || credentialsLoading || paymentLinksLoading || allAppsLoading || promotionsLoading || allMessageTemplatesLoading;

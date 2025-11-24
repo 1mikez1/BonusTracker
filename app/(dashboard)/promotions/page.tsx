@@ -21,7 +21,7 @@ export default function PromotionsPage() {
   } = useSupabaseData({
     table: 'promotions',
     select: '*, apps(*)',
-    order: { column: 'end_date', ascending: true, nullsFirst: false }
+    order: { column: 'end_date', ascending: true }
   });
 
   const {

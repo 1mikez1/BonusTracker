@@ -15,6 +15,10 @@ const sampleClients: Array<Table<'clients'>> = [
     trusted: true,
     tier_id: 'tier-top',
     invited_by_client_id: null,
+    invited_by_name: null,
+    goated: false,
+    needs_rewrite: false,
+    rewrite_j: false,
     notes: 'Prefers crypto apps',
     created_at: now.toISOString()
   },
@@ -27,6 +31,10 @@ const sampleClients: Array<Table<'clients'>> = [
     trusted: false,
     tier_id: 'tier-1',
     invited_by_client_id: 'client-1',
+    invited_by_name: null,
+    goated: false,
+    needs_rewrite: false,
+    rewrite_j: false,
     notes: 'Waiting Revolut bonus payout',
     created_at: now.toISOString()
   }

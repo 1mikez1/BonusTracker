@@ -736,7 +736,7 @@ export default function ClientDetailPage() {
         creditor_client_id: clientId,
         debtor_client_id: debtDebtorClientId || null,
         amount: parseFloat(debtAmount),
-        status: debtStatus,
+        status: debtStatus as "open" | "partial" | "settled",
         description: debtDescription || null
       };
       

@@ -40,7 +40,7 @@ function normalizeAppName(name: string): string {
   
   // Map common variations to standard names
   const nameMap: { [key: string]: string } = {
-    'TRADE': 'TRADING212',
+    'TRADE': 'TRADEREPUBLIC',
     'TRADEREPUBLIC': 'TRADEREPUBLIC',
     'TRADING 212': 'TRADING212',
     'BUDDY': 'BUDDYBANK',
@@ -48,8 +48,7 @@ function normalizeAppName(name: string): string {
     'BYBIT EU': 'BYBIT',
     'DEBLOCK': 'DEBLOCK',
     'TINABA': 'TINABA',
-    'TRAD212': 'TRADING212',
-    'BUDDY': 'BUDDYBANK'
+    'TRAD212': 'TRADING212'
   };
   
   return nameMap[normalized] || normalized;

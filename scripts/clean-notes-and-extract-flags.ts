@@ -76,7 +76,7 @@ function parseNotes(notes: string | null): ParsedFlags {
     };
   }
 
-  let cleanedNotes = notes;
+  let cleanedNotes: string | null = notes;
   let invitedByName: string | null = null;
   let needsRewrite = false;
   let rewritten = false;

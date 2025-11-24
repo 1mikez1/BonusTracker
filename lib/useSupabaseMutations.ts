@@ -43,7 +43,7 @@ export function useSupabaseMutations<T extends TableName>(
       }
 
       try {
-        const { data, error } = await client.from(table).update(updates).eq('id', id).select().single();
+        const { data, error } = await (client.from(table) as any).update(updates).eq('id', id).select().single();
         if (error) throw error;
 
         // Revalidate after success
@@ -85,7 +85,7 @@ export function useSupabaseMutations<T extends TableName>(
       }
 
       try {
-        const { data, error } = await client.from(table).insert(row).select().single();
+        const { data, error } = await (client.from(table) as any).insert(row).select().single();
         if (error) throw error;
 
         // Revalidate after success
@@ -127,7 +127,7 @@ export function useSupabaseMutations<T extends TableName>(
       }
 
       try {
-        const { error } = await client.from(table).delete().eq('id', id);
+        const { error } = await (client.from(table) as any).delete().eq('id', id);
         if (error) throw error;
 
         // Revalidate after success

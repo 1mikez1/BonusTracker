@@ -40,7 +40,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 const DATA_DIR = path.join(process.cwd(), 'Data');
 
 // Tier name mapping from CSV column names to database tier names
-const TIER_MAPPING: { [key: string]: string } = {
+const TIER_MAPPING: { [key: string]: string | null } = {
   'TOP': 'TOP',
   'TIER 1': 'Tier 1',
   'TIER 2': 'Tier 2',

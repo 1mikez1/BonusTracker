@@ -240,7 +240,8 @@ const sampleMessageTemplates: Array<Table<'message_templates'>> = [
     step: 'Registration',
     language: 'it',
     content: 'Scarica l\'app Revolut, aprila e premi su "Inizia". Segui la procedura KYC.',
-    notes: 'Send once document list confirmed'
+    notes: 'Send once document list confirmed',
+    step_order: 1
   },
   {
     id: 'msg-2',
@@ -249,7 +250,8 @@ const sampleMessageTemplates: Array<Table<'message_templates'>> = [
     step: 'Follow-up',
     language: 'it',
     content: 'Ricordati di completare il deposito entro oggi per ricevere il bonus massimo.',
-    notes: null
+    notes: null,
+    step_order: null
   }
 ];
 

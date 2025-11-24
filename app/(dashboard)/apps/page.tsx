@@ -186,7 +186,7 @@ export default function AppsPage() {
     // Count total referral links from all apps
     const totalReferralLinks = filteredRows.reduce((sum, row) => {
       const app = apps.find((a: any) => a.id === row.id);
-      return sum + (Array.isArray(app?.referral_links) ? app.referral_links.length : 0);
+      return sum + (app?.referral_links?.length || 0);
     }, 0);
     return [
       { title: 'Apps', value: filteredRows.length.toString(), caption: 'Filtered by current view' },

@@ -77,7 +77,11 @@ const samplePromotions: Array<Table<'promotions'>> = [
     start_date: now.toISOString(),
     end_date: null,
     terms_conditions: 'Deposit €10 and complete KYC',
-    notes: 'Send ID guide'
+    notes: 'Send ID guide',
+    expense: null,
+    is_active: true,
+    max_invites: null,
+    profit_type: null
   },
   {
     id: 'promo-bybit-1',
@@ -91,7 +95,11 @@ const samplePromotions: Array<Table<'promotions'>> = [
     start_date: now.toISOString(),
     end_date: null,
     terms_conditions: 'Spot trade volume €2k',
-    notes: 'Require proof of funds'
+    notes: 'Require proof of funds',
+    expense: null,
+    is_active: true,
+    max_invites: null,
+    profit_type: null
   }
 ];
 

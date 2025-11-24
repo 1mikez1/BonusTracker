@@ -331,7 +331,7 @@ export default function DeadlinesPage() {
             const appName = app.apps?.name || 'Unknown App';
             const deadlineColor = getDeadlineColor(app);
             const deadlineText = getDeadlineStatusText(app);
-            const days = getDaysUntilDeadline(app.deadline_at);
+            const days = getDaysUntilDeadline(app.deadline_at ?? null);
 
             return (
               <Link

@@ -616,7 +616,7 @@ export default function RequestsPage() {
                         setConvertRequestData({
                           name: request.name,
                           contact: request.contact,
-                          email: request.email,
+                          email: request.contact || '',
                           appId: matchedApp?.id,
                           clientId: request.client_id
                         });

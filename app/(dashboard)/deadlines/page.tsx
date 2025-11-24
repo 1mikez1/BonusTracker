@@ -33,15 +33,18 @@ export default function DeadlinesPage() {
 
   // Fetch client_apps with deadlines
   // Note: started_at and deadline_at are optional until migration 0026 is applied
-  const { data: clientApps, isLoading, error, mutate } = useSupabaseData({
+  const { data, isLoading, error, mutate } = useSupabaseData({
     table: 'client_apps',
     select: 'id, created_at, status, apps(id, name), clients!client_id(id, name, surname)',
     order: { column: 'created_at', ascending: true }
   });
 
+  // Cast to ClientAppWithDeadline[] to include optional deadline_at field
+  const clientApps = (data || []) as ClientAppWithDeadline[];
+
   // Categorize deadlines
   const categorized = useMemo(() => {
-    if (!clientApps) return { overdue: [], due_48h: [], in_progress: [], completed: [] };
+    if (!clientApps || clientApps.length === 0) return { overdue: [], due_48h: [], in_progress: [], completed: [] };
 
     const now = new Date();
     const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);

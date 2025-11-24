@@ -182,7 +182,7 @@ export default function AppsPage() {
 
   const metrics = useMemo(() => {
     const totalProfit = filteredRows.reduce((sum, row) => sum + row.totalProfit, 0);
-    const totalClients = filteredRows.reduce((sum, row) => sum + row.clientApps.length, 0);
+    const totalClients = filteredRows.reduce((sum, row) => sum + (row.clientApps?.length || 0), 0);
     // Count total referral links from all apps
     const totalReferralLinks = filteredRows.reduce((sum, row) => {
       const app = apps.find((a: any) => a.id === row.id);

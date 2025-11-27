@@ -48,7 +48,8 @@ function normalizeAppName(name: string): string {
     'BYBIT EU': 'BYBIT',
     'DEBLOCK': 'DEBLOCK',
     'TINABA': 'TINABA',
-    'TRAD212': 'TRADING212'
+    'TRAD212': 'TRADING212',
+    'BUDDY': 'BUDDYBANK'
   };
   
   return nameMap[normalized] || normalized;

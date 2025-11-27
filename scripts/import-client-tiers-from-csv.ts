@@ -55,49 +55,69 @@ function normalizeName(name: string): string {
 
 // Helper function to find client by name and surname
 async function findClientByName(name: string, surname: string | null): Promise<string | null> {
-  // Try exact match first
-  let query = supabase
-    .from('clients')
-    .select('id, name, surname')
-    .ilike('name', name.trim());
+  const normalizedName = normalizeName(name);
+  const normalizedSurname = surname ? normalizeName(surname) : '';
   
+  // Strategy 1: Exact match with name and surname
   if (surname) {
-    query = query.ilike('surname', surname.trim());
-  } else {
-    query = query.is('surname', null);
-  }
-  
-  const { data, error } = await query.limit(1).maybeSingle();
-  
-  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-    console.error(`Error finding client ${name} ${surname || ''}:`, error);
-    return null;
-  }
-  
-  if (data) {
-    return data.id;
-  }
-  
-  // Try fuzzy match: check if name matches without surname
-  if (surname) {
-    const { data: fuzzyData } = await supabase
+    let query = supabase
       .from('clients')
       .select('id, name, surname')
-      .ilike('name', name.trim())
-      .limit(5);
+      .ilike('name', name.trim());
     
-    if (fuzzyData && fuzzyData.length > 0) {
-      // Check if any client has a surname that contains the provided surname
-      const match = fuzzyData.find(c => 
-        c.surname && normalizeName(c.surname).includes(normalizeName(surname))
-      );
-      if (match) {
-        return match.id;
+    query = query.ilike('surname', surname.trim());
+    
+    const { data, error } = await query.limit(1).maybeSingle();
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error(`Error finding client ${name} ${surname}:`, error);
+      return null;
+    }
+    
+    if (data) {
+      return data.id;
+    }
+  }
+  
+  // Strategy 2: Match by full name (when surname might be in name field)
+  const fullName = surname ? `${name} ${surname}` : name;
+  const normalizedFullName = normalizeName(fullName);
+  
+  const { data: allClients } = await supabase
+    .from('clients')
+    .select('id, name, surname');
+  
+  if (allClients) {
+    // Try to match by combining name + surname from DB
+    for (const client of allClients) {
+      const clientFullName = client.surname 
+        ? `${client.name} ${client.surname}` 
+        : client.name;
+      const normalizedClientFullName = normalizeName(clientFullName);
+      
+      // Exact match
+      if (normalizedClientFullName === normalizedFullName) {
+        return client.id;
       }
       
-      // If only one match and surname is null in DB, use it
-      if (fuzzyData.length === 1 && !fuzzyData[0].surname) {
-        return fuzzyData[0].id;
+      // Partial match (one contains the other)
+      if (normalizedClientFullName.includes(normalizedFullName) || 
+          normalizedFullName.includes(normalizedClientFullName)) {
+        return client.id;
+      }
+    }
+    
+    // Strategy 3: Match by first name only (if surname matches partially)
+    if (surname) {
+      for (const client of allClients) {
+        if (normalizeName(client.name) === normalizedName) {
+          // If surname matches partially or is null, accept it
+          if (!client.surname || 
+              normalizeName(client.surname).includes(normalizedSurname) ||
+              normalizedSurname.includes(normalizeName(client.surname))) {
+            return client.id;
+          }
+        }
       }
     }
   }
@@ -132,12 +152,28 @@ async function importClientTiers(): Promise<void> {
   
   // Step 2: Read CSV file
   console.log('\n📄 Step 2: Reading CSV file...');
-  const csvPath = path.join(DATA_DIR, 'New - BH', 'New - BH - TIER CLIENTI.csv');
+  // Try multiple possible locations
+  const possiblePaths = [
+    path.join(DATA_DIR, 'New - BH', 'New - BH - TIER CLIENTI.csv'),
+    path.join(process.cwd(), 'New - BH - TIER CLIENTI.csv'),
+    path.join(process.cwd(), 'Data', 'New - BH', 'New - BH - TIER CLIENTI.csv')
+  ];
   
-  if (!fs.existsSync(csvPath)) {
-    console.error(`  ❌ File not found: ${csvPath}`);
+  let csvPath: string | null = null;
+  for (const possiblePath of possiblePaths) {
+    if (fs.existsSync(possiblePath)) {
+      csvPath = possiblePath;
+      break;
+    }
+  }
+  
+  if (!csvPath) {
+    console.error(`  ❌ File not found. Tried:`);
+    possiblePaths.forEach(p => console.error(`    - ${p}`));
     process.exit(1);
   }
+  
+  console.log(`  ✓ Found CSV at: ${csvPath}`);
   
   const content = fs.readFileSync(csvPath, 'utf-8');
   const contentWithoutBOM = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;

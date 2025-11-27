@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { useSupabaseMutations } from '@/lib/useSupabaseMutations';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 import { SectionHeader } from '@/components/SectionHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -34,6 +35,9 @@ export default function ClientDetailPage() {
   const [appNotesText, setAppNotesText] = useState('');
   const [isSavingAppNotes, setIsSavingAppNotes] = useState(false);
   const [editingAppDetailsId, setEditingAppDetailsId] = useState<string | null>(null);
+  const [editingStartedAppId, setEditingStartedAppId] = useState<string | null>(null);
+  const [startedDateText, setStartedDateText] = useState('');
+  const [isSavingStartedDate, setIsSavingStartedDate] = useState(false);
   
   // App details edit form fields
   const [appStatus, setAppStatus] = useState('');
@@ -379,6 +383,62 @@ export default function ClientDetailPage() {
       console.error('Error saving app notes:', error);
       alert('Failed to save notes. Please try again.');
       setIsSavingAppNotes(false);
+    }
+  };
+
+  const handleEditStartedDate = (appId: string, currentStartedAt: string | null) => {
+    setEditingStartedAppId(appId);
+    // Format date for input (YYYY-MM-DD)
+    if (currentStartedAt) {
+      const date = new Date(currentStartedAt);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      setStartedDateText(`${year}-${month}-${day}`);
+    } else {
+      setStartedDateText('');
+    }
+  };
+
+  const handleSaveStartedDate = async (appId: string) => {
+    setIsSavingStartedDate(true);
+    try {
+      let startedAt: string | null = null;
+      if (startedDateText.trim()) {
+        // Parse date and convert to ISO string
+        const date = new Date(startedDateText);
+        if (isNaN(date.getTime())) {
+          alert('Invalid date format. Please use YYYY-MM-DD.');
+          setIsSavingStartedDate(false);
+          return;
+        }
+        // Set to start of day in local timezone, then convert to ISO
+        date.setHours(0, 0, 0, 0);
+        startedAt = date.toISOString();
+      }
+
+      await updateClientApp(
+        { started_at: startedAt },
+        appId,
+        {
+          onSuccess: () => {
+            setEditingStartedAppId(null);
+            setStartedDateText('');
+            setIsSavingStartedDate(false);
+            // Recalculate deadline after updating started_at
+            mutateClientApps();
+          },
+          onError: (error) => {
+            console.error('Error saving started date:', error);
+            alert('Failed to save started date. Please try again.');
+            setIsSavingStartedDate(false);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error saving started date:', error);
+      alert('Failed to save started date. Please try again.');
+      setIsSavingStartedDate(false);
     }
   };
   
@@ -900,6 +960,21 @@ export default function ClientDetailPage() {
       }
     } else if (deleteModal.type === 'client' && deleteModal.id) {
       try {
+        // First, delete or unlink related requests (they don't have CASCADE)
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          // Delete requests associated with this client
+          const { error: requestsError } = await supabase
+            .from('requests')
+            .delete()
+            .eq('client_id', deleteModal.id);
+          
+          if (requestsError) {
+            console.warn('Error deleting requests (non-fatal):', requestsError);
+            // Continue anyway - might be permission issue or requests might not exist
+          }
+        }
+        
         // Delete client - this will cascade delete all related records (client_apps, credentials, etc.)
         // due to ON DELETE CASCADE in the database schema
         await removeClient(deleteModal.id, {
@@ -917,19 +992,21 @@ export default function ClientDetailPage() {
           },
           onError: (error) => {
             console.error('Error deleting client:', error);
+            const errorMessage = error?.message || 'Unknown error';
             setToast({
               isOpen: true,
-              message: 'Failed to delete client profile. Please try again.',
+              message: `Failed to delete client profile: ${errorMessage}. Please check the browser console for details.`,
               type: 'error'
             });
             setDeleteModal({ isOpen: false, type: null, id: null });
           }
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error deleting client:', error);
+        const errorMessage = error?.message || 'Unknown error';
         setToast({
           isOpen: true,
-          message: 'Failed to delete client profile. Please try again.',
+          message: `Failed to delete client profile: ${errorMessage}. Please check the browser console for details.`,
           type: 'error'
         });
         setDeleteModal({ isOpen: false, type: null, id: null });
@@ -1776,6 +1853,7 @@ export default function ClientDetailPage() {
                         status: 'requested',
                         deposited: false,
                         finished: false,
+                        started_at: new Date().toISOString(), // Set started_at for deadline calculation
                         notes: combinedNotes || null
                       });
                       
@@ -2064,7 +2142,82 @@ export default function ClientDetailPage() {
                       item.profit_us ?? 
                       (item.promotion?.our_reward ?? 0)
                     ).toFixed(2)}</span>
-                    <span><strong>Started:</strong> {new Date(item.created_at).toLocaleDateString()}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <strong>Started:</strong>
+                      {editingStartedAppId === item.id ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                          <input
+                            type="date"
+                            value={startedDateText}
+                            onChange={(e) => setStartedDateText(e.target.value)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '0.85rem',
+                              fontFamily: 'inherit'
+                            }}
+                            disabled={isSavingStartedDate}
+                          />
+                          <button
+                            onClick={() => handleSaveStartedDate(item.id)}
+                            disabled={isSavingStartedDate}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingStartedDate ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingStartedDate ? 0.6 : 1
+                            }}
+                          >
+                            {isSavingStartedDate ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingStartedAppId(null);
+                              setStartedDateText('');
+                            }}
+                            disabled={isSavingStartedDate}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#64748b',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingStartedDate ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingStartedDate ? 0.6 : 1
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span>{new Date(item.started_at || item.created_at).toLocaleDateString()}</span>
+                          <button
+                            onClick={() => handleEditStartedDate(item.id, item.started_at)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                       {item.deposited && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Deposited</span>}
                       {item.finished && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Finished</span>}

@@ -379,6 +379,7 @@ export function NewSignupModal({
         status: 'requested',
         deposited: false,
         finished: false,
+        started_at: new Date().toISOString(), // Set started_at for deadline calculation
         notes: notes || null
       };
 

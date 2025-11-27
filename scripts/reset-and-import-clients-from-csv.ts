@@ -2,8 +2,13 @@
 //
 // Usage (Windows CMD):
 //   cd E:\Bonus\BonusTracker\BonusTracker
-//   set SUPABASE_URL=https://REDACTED_PROJECT_REF.supabase.co
+//   set SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
 //   set SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+//   npx tsx scripts/reset-and-import-clients-from-csv.ts
+//
+// Usage (Linux/Mac):
+//   export SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+//   export SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 //   npx tsx scripts/reset-and-import-clients-from-csv.ts
 //
 // Cosa fa:

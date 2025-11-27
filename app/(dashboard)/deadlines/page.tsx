@@ -35,7 +35,7 @@ export default function DeadlinesPage() {
   // Note: started_at and deadline_at are optional until migration 0026 is applied
   const { data, isLoading, error, mutate } = useSupabaseData({
     table: 'client_apps',
-    select: 'id, created_at, status, apps(id, name), clients!client_id(id, name, surname)',
+    select: 'id, created_at, started_at, deadline_at, status, apps(id, name, deadline_days), clients!client_apps_client_id_fkey(id, name, surname)',
     order: { column: 'created_at', ascending: true }
   });
 
@@ -62,19 +62,20 @@ export default function DeadlinesPage() {
       const deadline = new Date(app.deadline_at);
       const status = app.status;
 
-      // Completed or paid = completed
+      // Only "completed" or "paid" status = completed (no longer needs processing)
+      // "deposited" and other statuses still need processing until paid/completed
       if (status === 'completed' || status === 'paid') {
         categories.completed.push(app);
       }
-      // Overdue = deadline passed and not completed
+      // Overdue = deadline passed and still needs processing (not paid/completed)
       else if (deadline < now) {
         categories.overdue.push(app);
       }
-      // Due in 48h = deadline within 48 hours
+      // Due in 48h = deadline within 48 hours and still needs processing
       else if (deadline <= in48h) {
         categories.due_48h.push(app);
       }
-      // In progress = deadline in future
+      // In progress = deadline in future and still needs processing
       else {
         categories.in_progress.push(app);
       }
@@ -112,14 +113,17 @@ export default function DeadlinesPage() {
     if (!app.deadline_at) return '#64748b'; // gray
     
     const status = app.status;
-    if (status === 'completed' || status === 'paid') return '#10b981'; // green
+    
+    // Paid items get a distinct blue color to distinguish from in-progress
+    if (status === 'paid') return '#3b82f6'; // blue (paid - distinct from in progress)
+    if (status === 'completed') return '#10b981'; // green (completed)
     
     const days = getDaysUntilDeadline(app.deadline_at);
     if (days === null) return '#64748b';
     
     if (days < 0) return '#ef4444'; // red (overdue)
     if (days <= 2) return '#f59e0b'; // orange (due in 48h)
-    return '#10b981'; // green (in progress)
+    return '#10b981'; // green (in progress - active items)
   };
 
   // Get deadline status text
@@ -127,7 +131,8 @@ export default function DeadlinesPage() {
     if (!app.deadline_at) return 'No deadline';
     
     const status = app.status;
-    if (status === 'completed' || status === 'paid') return 'Completed';
+    if (status === 'completed') return 'Completed';
+    if (status === 'paid') return 'Paid';
     
     const days = getDaysUntilDeadline(app.deadline_at);
     if (days === null) return 'No deadline';
@@ -160,13 +165,37 @@ export default function DeadlinesPage() {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '0.5rem' }}>
-          Bonus Deadlines
-        </h1>
-        <p style={{ color: '#64748b', fontSize: '1rem' }}>
-          Track and manage bonus deadlines for all client apps
-        </p>
+      <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: '2rem', fontWeight: '700', marginBottom: '0.5rem' }}>
+            Bonus Deadlines
+          </h1>
+          <p style={{ color: '#64748b', fontSize: '1rem' }}>
+            Track and manage bonus deadlines for all client apps
+          </p>
+        </div>
+        <button
+          onClick={() => mutate()}
+          disabled={isLoading}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontSize: '0.9rem',
+            fontWeight: '500',
+            opacity: isLoading ? 0.6 : 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+          title="Refresh deadlines"
+        >
+          <span>🔄</span>
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
       {/* Summary Cards */}

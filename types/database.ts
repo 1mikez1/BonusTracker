@@ -48,6 +48,7 @@ export type Database = {
           completed_at: string | null
           completed_steps: Json | null
           created_at: string
+          deadline_at: string | null
           deposit_amount: number | null
           deposited: boolean
           finished: boolean
@@ -58,6 +59,7 @@ export type Database = {
           profit_us: number | null
           promotion_id: string | null
           referral_link_id: string | null
+          started_at: string | null
           status: Database["public"]["Enums"]["client_app_status"]
         }
         Insert: {
@@ -66,6 +68,7 @@ export type Database = {
           completed_at?: string | null
           completed_steps?: Json | null
           created_at?: string
+          deadline_at?: string | null
           deposit_amount?: number | null
           deposited?: boolean
           finished?: boolean
@@ -76,6 +79,7 @@ export type Database = {
           profit_us?: number | null
           promotion_id?: string | null
           referral_link_id?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["client_app_status"]
         }
         Update: {
@@ -84,6 +88,7 @@ export type Database = {
           completed_at?: string | null
           completed_steps?: Json | null
           created_at?: string
+          deadline_at?: string | null
           deposit_amount?: number | null
           deposited?: boolean
           finished?: boolean
@@ -94,6 +99,7 @@ export type Database = {
           profit_us?: number | null
           promotion_id?: string | null
           referral_link_id?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["client_app_status"]
         }
         Relationships: [

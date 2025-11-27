@@ -14,8 +14,13 @@
  */
 
 // ⚙️ CONFIGURATION
+// IMPORTANT: Replace these placeholders with your actual Supabase credentials
+// 1. Get your Supabase project URL from: https://app.supabase.com > Your Project > Settings > API
+// 2. Get your anon key from: https://app.supabase.com > Your Project > Settings > API > anon public key
+// 3. Get your function URL: https://YOUR-PROJECT-REF.supabase.co/functions/v1/google-forms-webhook
+
 const SUPABASE_FUNCTION_URL = 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/google-forms-webhook';
-const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY'; // Optional, if you want to add auth
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY-HERE'; // Optional, if you want to add auth
 
 /**
  * Trigger function: Called when form is submitted

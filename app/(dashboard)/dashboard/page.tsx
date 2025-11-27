@@ -68,7 +68,7 @@ export default function UnifiedDashboardPage() {
   // Fetch deadlines (overdue and due soon)
   const { data: deadlines, isLoading: deadlinesLoading } = useSupabaseData({
     table: 'client_apps',
-    select: 'id, deadline_at, status, apps(name), clients!client_id(id, name, surname)',
+    select: 'id, deadline_at, status, apps(name), clients!client_apps_client_id_fkey(id, name, surname)',
     filters: {
       deadline_at: { not: { is: null } } as any
     },

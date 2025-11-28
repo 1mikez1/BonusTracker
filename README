@@ -1,0 +1,940 @@
+````markdown
+# # BH Referral & Bonus Management Web App
+
+## Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables:**
+   - Create `.env.local` in the root directory
+   - Add your Supabase credentials (see `QUICK_SETUP.md` for details)
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+   ```
+
+3. **Start development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Open http://localhost:3000**
+
+For detailed setup instructions, see `QUICK_SETUP.md` or `SETUP_ENVIRONMENT.md`.
+
+## Documentation
+
+- `QUICK_SETUP.md` - Quick start guide
+- `SETUP_ENVIRONMENT.md` - Detailed environment setup
+- `MIGRATION_GUIDE.md` - Data migration instructions
+- `IMPLEMENTATION_STATUS.md` - Current implementation status
+
+Internal web app for managing **referral-based signup flows and bonus farming** across multiple apps (banks, CEXs, betting, trading, etc.), built on **Supabase** (Postgres + Auth + Storage + Edge Functions) with a **React/Next.js** frontend.
+
+This README is intentionally **very detailed**: it is meant as a complete recipe for a capable AI or developer to:
+
+- Set up the project locally
+- Configure Supabase
+- Understand the **data model**
+- Implement migrations, RLS, and Edge Functions
+- Migrate data from Excel
+- Run and extend the web app
+
+---
+
+## 1. High-Level Overview
+
+### 1.1 Problem This App Solves
+
+Currently, the business logic is spread across **three Excel workbooks**:
+
+- `NEW-J`
+- `New - BH`
+- `Guide app`
+
+They track:
+
+- **Clients** and what apps they’ve done
+- **Referral links** and who owns/uses them
+- **Promotions**, bonus amounts, and deadlines
+- **Status of each client on each app** (requested, deposited, finished, paid)
+- **Debts** when borrowing links / capital for large deposits
+- **Credentials** to log into platforms for clients
+- **Payment links** (SumUp, Amazon, etc.)
+- **Prewritten messages** to guide clients through registration
+
+The goal is to **replace Excel** with a structured, secure, queryable **web dashboard**.
+
+### 1.2 Core Business Objects
+
+At a high level, the system manages:
+
+- **Clients**: people doing the promos
+- **Tiers**: TOP, TIER 1, TIER 2, 20IQ
+- **Apps**: REVOLUT, BBVA, ISYBANK, BYBIT, KRAKEN, TRADING212, BUDDYBANK, SISAL, POKERSTARS, etc.
+- **Promotions**: bonuses and rules per app
+- **Referral Links**: invite URLs/codes, usage limits
+- **Debts**: when using someone else’s link and money
+- **Client–App Records**: each client doing each app, with status and profits
+- **Requests**: entries from Google Forms, before they become full clients
+- **Credentials**: emails/passwords to log in to platforms
+- **Payment Links**: SumUp/Amazon/etc. URLs to move money
+- **Slots**: RTP info for slots (mainly SISAL)
+- **Message Templates**: copy-paste instructions for clients
+
+---
+
+## 2. Architecture
+
+### 2.1 Logical Architecture
+
+```text
++--------------------+          +--------------------------+
+|  Operator Browser  |  <---->  |  Next.js / React Frontend|
++--------------------+          +--------------------------+
+                                      |
+                                      v
+                         +-------------------------------+
+                         | Supabase JS Client SDK        |
+                         +-------------------------------+
+                                      |
+            +-----------------------------------------------------+
+            |                     Supabase                        |
+            |                                                     |
+            |  +-----------+   +-------------+   +--------------+ |
+            |  | Postgres  |   |   Auth      |   | Edge Funcs   | |
+            |  | (DB + RLS)|   | (operators) |   | (sensitive   | |
+            |  +-----------+   +-------------+   |  logic)      | |
+            |                                     +--------------+ |
+            +-----------------------------------------------------+
+````
+
+### 2.2 Tech Stack
+
+* **Backend / Data**: Supabase
+
+  * Postgres database
+  * Supabase Auth (email/password or OAuth for operators)
+  * Row Level Security (RLS)
+  * Edge Functions for sensitive operations (e.g. decrypting credentials)
+* **Frontend**:
+
+  * Next.js (TypeScript, React)
+  * Supabase JS client (`@supabase/supabase-js`)
+* **Tooling**:
+
+  * Node.js (>= 18)
+  * Package manager: `pnpm` (or `npm`/`yarn`)
+  * Supabase CLI (for local dev & migrations)
+  * Optional: Docker (for local Supabase via CLI)
+
+### 2.3 Running the web dashboard locally
+
+The repository now includes a production-ready Next.js dashboard that mirrors the operational blueprint defined in this
+document.
+
+1. Install dependencies:
+
+   ```bash
+   pnpm install # or npm install / yarn install
+   ```
+
+2. Create an `.env.local` file in the project root with your Supabase credentials (or leave empty to use bundled demo data):
+
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=public-anon-key
+   ```
+
+   When the environment variables are absent the UI boots in **demo mode**, seeding the widgets and tables with realistic
+   sample data so operators can explore the workflow offline.
+
+3. Start the app:
+
+   ```bash
+   pnpm dev # or npm run dev / yarn dev
+   ```
+
+4. The dashboard will be available at `http://localhost:3000` with navigation covering clients, apps, pipeline, referral
+   links, debts, requests, payment links, slots and guide messages.
+
+---
+
+## 3. Repository Structure
+
+Suggested repo layout:
+
+```text
+bh-referral-app/
+├─ README.md
+├─ package.json
+├─ pnpm-lock.yaml (or yarn.lock / package-lock.json)
+├─ .env.local (frontend env vars)
+├─ supabase/
+│  ├─ config.toml
+│  ├─ migrations/
+│  │  ├─ 0001_init_schema.sql
+│  │  └─ ...more migrations...
+│  ├─ seed/
+│  │  ├─ seed.sql
+│  └─ functions/
+│     ├─ decrypt-credential/
+│     │  ├─ index.ts
+│     │  └─ ...
+│     └─ ...other edge functions...
+├─ src/
+│  ├─ pages/ or app/ (Next.js routing)
+│  │  ├─ index.tsx           (Dashboard or redirect)
+│  │  ├─ clients/
+│  │  │  ├─ index.tsx        (Clients list)
+│  │  │  └─ [id].tsx         (Client detail)
+│  │  ├─ apps/
+│  │  │  ├─ index.tsx
+│  │  │  └─ [id].tsx
+│  │  ├─ pipeline/
+│  │  │  └─ index.tsx        (Kanban of client_apps)
+│  │  ├─ referrals/
+│  │  ├─ debts/
+│  │  ├─ requests/
+│  │  ├─ payment-links/
+│  │  ├─ slots/
+│  │  └─ messages/
+│  ├─ components/
+│  │  ├─ layout/
+│  │  ├─ tables/
+│  │  ├─ forms/
+│  │  └─ ui/                 (e.g. buttons, inputs)
+│  ├─ lib/
+│  │  ├─ supabaseClient.ts   (createBrowserSupabaseClient)
+│  │  ├─ types.ts            (shared TS types)
+│  │  └─ api/                (data fetching helpers)
+│  └─ styles/
+└─ scripts/
+   ├─ migrate-from-excel/
+   │  └─ index.ts            (import logic using Supabase service key)
+   └─ ...
+```
+
+---
+
+## 4. Getting Started
+
+### 4.1 Prerequisites
+
+* **Node.js**: v18+
+* **Package manager**: `pnpm` (recommended)
+* **Supabase account**: [https://supabase.com](https://supabase.com)
+* **Supabase CLI**:
+
+  ```bash
+  npm install -g supabase
+  ```
+* **Git**
+* Optional: `python` with `pandas` if you prefer Python for migration scripts.
+
+### 4.2 Clone and Install Dependencies
+
+```bash
+git clone <REPO_URL> bh-referral-app
+cd bh-referral-app
+pnpm install      # or npm install / yarn install
+```
+
+---
+
+## 5. Supabase Setup
+
+### 5.1 Create Supabase Project
+
+1. Login to Supabase dashboard.
+2. Create a new project (e.g. `bh-referral-app`).
+3. Set a **strong** database password.
+4. Note down:
+
+   * **Project URL**
+   * **Anon public key**
+   * **Service role key** (server-side only!)
+
+### 5.2 Configure Supabase in the Repo
+
+Create `supabase/config.toml`:
+
+```toml
+project_id = "bh-referral-app"
+[api]
+port = 54321
+[db]
+port = 54322
+```
+
+Adjust `project_id` and ports as needed.
+
+### 5.3 Environment Variables
+
+Create `.env.local` for the frontend:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL="https://<your-project-ref>.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
+
+# DO NOT expose SERVICE_ROLE in frontend code.
+SUPABASE_SERVICE_ROLE_KEY="<your-service-role-key>"  # Use only in scripts or edge functions.
+```
+
+> The frontend should **only** use `NEXT_PUBLIC_SUPABASE_*` variables.
+> The `SUPABASE_SERVICE_ROLE_KEY` should be used **only** in backend contexts (scripts, edge functions, CI/CD).
+
+---
+
+## 6. Database Schema (Supabase/Postgres)
+
+Below is the **logical schema** you must implement as tables in Supabase. You can create these via:
+
+* SQL migrations in `supabase/migrations/*.sql`, or
+* Supabase SQL editor directly (and then export as migrations).
+
+### 6.1 Tables Overview
+
+You will create at least these tables:
+
+* `tiers`
+* `clients`
+* `apps`
+* `promotions`
+* `referral_links`
+* `referral_link_debts`
+* `client_apps`
+* `requests`
+* `credentials`
+* `payment_links`
+* `slots`
+* `message_templates`
+
+#### 6.1.1 Example SQL – `tiers`
+
+```sql
+create table public.tiers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  priority integer not null,
+  notes text
+);
+```
+
+#### 6.1.2 Example SQL – `clients`
+
+```sql
+create table public.clients (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  surname text,
+  contact text,
+  email text,
+  trusted boolean not null default false,
+  tier_id uuid references public.tiers(id),
+  invited_by_client_id uuid references public.clients(id),
+  notes text,
+  created_at timestamptz not null default now()
+);
+```
+
+#### 6.1.3 Example SQL – `apps`
+
+```sql
+create table public.apps (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  app_type text,
+  country text,
+  is_active boolean not null default true,
+  notes text
+);
+```
+
+#### 6.1.4 Example SQL – `promotions`
+
+```sql
+create table public.promotions (
+  id uuid primary key default gen_random_uuid(),
+  app_id uuid not null references public.apps(id) on delete cascade,
+  name text not null,
+  client_reward numeric(12,2) not null default 0,
+  our_reward numeric(12,2) not null default 0,
+  deposit_required numeric(12,2) not null default 0,
+  freeze_days integer,
+  time_to_get_bonus text,
+  start_date date,
+  end_date date,
+  terms_conditions text,
+  notes text
+);
+```
+
+#### 6.1.5 Example SQL – `referral_links`
+
+```sql
+create table public.referral_links (
+  id uuid primary key default gen_random_uuid(),
+  app_id uuid not null references public.apps(id) on delete cascade,
+  url text not null,
+  owner_client_id uuid references public.clients(id),
+  max_uses integer,
+  current_uses integer not null default 0,
+  is_active boolean not null default true,
+  notes text
+);
+```
+
+#### 6.1.6 Example SQL – `referral_link_debts`
+
+```sql
+create table public.referral_link_debts (
+  id uuid primary key default gen_random_uuid(),
+  referral_link_id uuid not null references public.referral_links(id) on delete cascade,
+  creditor_client_id uuid not null references public.clients(id),
+  debtor_client_id uuid references public.clients(id),
+  amount numeric(12,2) not null,
+  status text not null, -- 'open', 'partial', 'settled'
+  description text,
+  created_at timestamptz not null default now(),
+  settled_at timestamptz
+);
+```
+
+#### 6.1.7 Example SQL – `client_apps`
+
+```sql
+create table public.client_apps (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients(id) on delete cascade,
+  app_id uuid not null references public.apps(id) on delete cascade,
+  promotion_id uuid references public.promotions(id),
+  referral_link_id uuid references public.referral_links(id),
+  invited_by_client_id uuid references public.clients(id),
+  status text not null, -- 'requested', 'registered', 'deposited', 'waiting_bonus', 'completed', 'paid', 'cancelled'
+  deposited boolean not null default false,
+  finished boolean not null default false,
+  deposit_amount numeric(12,2),
+  profit_client numeric(12,2),
+  profit_us numeric(12,2),
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  notes text,
+  constraint client_app_unique unique (client_id, app_id)
+);
+```
+
+> If a client can do the same app multiple times, remove `client_app_unique`.
+
+#### 6.1.8 Example SQL – `requests`
+
+```sql
+create table public.requests (
+  id uuid primary key default gen_random_uuid(),
+  external_form_id text,
+  client_id uuid references public.clients(id),
+  name text not null,
+  contact text,
+  requested_apps_raw text,
+  notes text,
+  status text not null, -- 'new', 'contacted', 'converted', 'rejected'
+  created_at timestamptz not null default now(),
+  processed_at timestamptz
+);
+```
+
+#### 6.1.9 Example SQL – `credentials`
+
+```sql
+create table public.credentials (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.clients(id) on delete cascade,
+  app_id uuid not null references public.apps(id) on delete cascade,
+  email text not null,
+  username text,
+  password_encrypted text not null,
+  notes text,
+  created_at timestamptz not null default now()
+);
+```
+
+> **Important:** `password_encrypted` **must NOT** be plain text. See [Security](#8-security--credentials) below.
+
+#### 6.1.10 Example SQL – `payment_links`
+
+```sql
+create table public.payment_links (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null, -- e.g. 'SumUp', 'Amazon'
+  url text not null,
+  amount numeric(12,2),
+  purpose text,
+  client_id uuid references public.clients(id),
+  app_id uuid references public.apps(id),
+  used boolean not null default false,
+  created_at timestamptz not null default now(),
+  used_at timestamptz
+);
+```
+
+#### 6.1.11 Example SQL – `slots`
+
+```sql
+create table public.slots (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  provider text,
+  rtp_percentage numeric(5,2) not null,
+  notes text
+);
+```
+
+#### 6.1.12 Example SQL – `message_templates`
+
+```sql
+create table public.message_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  app_id uuid references public.apps(id),
+  step text,
+  language text,
+  content text not null,
+  notes text
+);
+```
+
+---
+
+## 7. Row Level Security (RLS) & Auth
+
+### 7.1 Enable RLS
+
+In Supabase SQL editor:
+
+```sql
+alter table public.clients enable row level security;
+alter table public.client_apps enable row level security;
+alter table public.credentials enable row level security;
+alter table public.promotions enable row level security;
+alter table public.referral_links enable row level security;
+alter table public.referral_link_debts enable row level security;
+alter table public.payment_links enable row level security;
+alter table public.requests enable row level security;
+alter table public.slots enable row level security;
+alter table public.message_templates enable row level security;
+alter table public.tiers enable row level security;
+alter table public.apps enable row level security;
+```
+
+### 7.2 Basic Policies (Internal Operators Only)
+
+Assume all operators are Supabase-authenticated (`auth.uid()` exists).
+You can apply a **simple policy**: allow all operations if authenticated.
+
+Example (for `clients`):
+
+```sql
+create policy "Allow authenticated read/write"
+on public.clients
+for all
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+```
+
+Repeat similar policies for all tables:
+
+```sql
+create policy "Allow authenticated read/write"
+on public.client_apps
+for all
+using (auth.uid() is not null)
+with check (auth.uid() is not null);
+
+-- ...and so on for the rest
+```
+
+> In future, you can introduce role-based restrictions (e.g. some operators read-only).
+
+---
+
+## 8. Security & Credentials
+
+### 8.1 Credentials Handling Requirements
+
+* **Never store plain text passwords**.
+* Use **encryption** before storing `password_encrypted`.
+* Decrypt only when strictly needed, ideally through an **Edge Function** using the **service role key**.
+
+### 8.2 Simple Encryption Strategy (High-Level)
+
+1. Generate an encryption key (e.g. symmetric key).
+2. Store it securely (environment variable **not exposed to frontend**).
+3. When creating/updating credentials:
+
+   * Encrypt client-side (if you trust local environment) **or**
+   * Call a secure Edge Function to encrypt using the key.
+4. `password_encrypted` stores the ciphertext (base64 or hex).
+5. Use a **restricted Edge Function** (only callable by authenticated operators) to decrypt when needed.
+
+### 8.3 Edge Function Example (Conceptual)
+
+`supabase/functions/decrypt-credential/index.ts`:
+
+```ts
+import { serve } from "https://deno.land/std/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+serve(async (req) => {
+  // Verify the request is authenticated (check headers / JWT, etc.)
+  // Use service role key or function-specific secrets to read and decrypt.
+  // Return decrypted password only if absolutely required, never log it.
+  return new Response(JSON.stringify({ error: "Not implemented" }), {
+    headers: { "Content-Type": "application/json" },
+    status: 500,
+  });
+});
+```
+
+> The actual encryption/decryption code is omitted here; implement using your chosen crypto library and **keep it off the client**.
+
+---
+
+## 9. Frontend Integration (Next.js + Supabase)
+
+### 9.1 Supabase Client
+
+`src/lib/supabaseClient.ts`:
+
+```ts
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+```
+
+### 9.2 Example: Fetch Clients
+
+```ts
+import { supabase } from "@/lib/supabaseClient";
+
+export async function fetchClients() {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("*, tiers(name, priority)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+```
+
+### 9.3 Example: Update Client-App Status
+
+```ts
+export async function updateClientAppStatus(clientAppId: string, newStatus: string) {
+  const { data, error } = await supabase
+    .from("client_apps")
+    .update({ status: newStatus })
+    .eq("id", clientAppId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+```
+
+---
+
+## 10. Data Migration from Excel
+
+### 10.1 Strategy
+
+1. Export each sheet as **CSV**:
+
+   * `NEW-J.Inviti.csv`
+   * `NEW-J.REVOLUT.csv`, `NEW-J.BBVA.csv`, ...
+   * `New - BH.CLIENTI.csv`
+   * `New - BH.MODULO.csv`
+   * `New - BH.TIER CLIENTI.csv`
+   * `New - BH.INVITI.csv`
+   * `New - BH.Lista Bybit_kraken.csv`
+   * `New - BH.MAIL.csv`
+   * `New - BH.PROMOZIONI.csv`
+   * `New - BH.Link_pagamenti.csv`
+   * `NEW-J.RTP slot sisal.csv`
+   * `Guide app.messages.csv`
+
+2. Write a migration script (e.g. `scripts/migrate-from-excel/index.ts`) that:
+
+   * Uses the **Supabase service role key**.
+   * Reads CSVs, normalizes data, and inserts into the appropriate tables.
+
+### 10.2 Example Migration Skeleton (TypeScript)
+
+```ts
+// scripts/migrate-from-excel/index.ts
+import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
+import path from "path";
+import csvParse from "csv-parse/sync";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabase = createClient(supabaseUrl, serviceKey);
+
+async function importAppsFromLegacySheets() {
+  const appNames = ["REVOLUT", "BBVA", "ISYBANK", "BYBIT", "KRAKEN", "TRADING212", "BUDDYBANK", "SISAL", "POKERSTARS"];
+
+  for (const name of appNames) {
+    const { data, error } = await supabase
+      .from("apps")
+      .upsert({ name, is_active: true }, { onConflict: "name" })
+      .select("*");
+    if (error) throw error;
+    console.log("Upserted app:", name);
+  }
+}
+
+async function importTiers() {
+  // You can hardcode tiers or parse from CSV
+  const tiers = [
+    { name: "TOP", priority: 1 },
+    { name: "TIER 1", priority: 2 },
+    { name: "TIER 2", priority: 3 },
+    { name: "20IQ", priority: 4 },
+  ];
+
+  const { error } = await supabase.from("tiers").upsert(tiers, { onConflict: "name" });
+  if (error) throw error;
+  console.log("Imported tiers");
+}
+
+async function importSlotsFromCsv() {
+  const filePath = path.join(__dirname, "NEW-J.RTP slot sisal.csv");
+  const csv = fs.readFileSync(filePath, "utf8");
+  const records = csvParse.parse(csv, { columns: true, skip_empty_lines: true });
+
+  for (const row of records) {
+    const payload = {
+      name: row["SlotName"],
+      provider: row["Provider"] || null,
+      rtp_percentage: parseFloat(row["RTP"]),
+      notes: row["Notes"] || null,
+    };
+
+    const { error } = await supabase.from("slots").insert(payload);
+    if (error) throw error;
+  }
+  console.log("Imported slots");
+}
+
+async function main() {
+  await importAppsFromLegacySheets();
+  await importTiers();
+  await importSlotsFromCsv();
+  // TODO: import clients, client_apps, referral_links, promotions, etc.
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+> Extend this script to cover **all** sheets and tables, carefully mapping rows to the new schema.
+
+### 10.3 Critical Migration Considerations
+
+* **Clients deduplication**: same person may appear in multiple sheets. Decide a consistent key (e.g., name + contact).
+* **Statuses**: convert Excel checkboxes (deposited, finished) into `client_apps.status`, `deposited`, and `finished`.
+* **Link usage**: if usage counts exist, set `current_uses` accordingly.
+* **Debts**: map BYBIT/KRAKEN “Lista” sheet to `referral_link_debts`.
+* **Promotions**: parse numeric fields (profits, deposit_required) carefully.
+* **Credentials**: encrypt passwords before inserting.
+
+---
+
+## 11. Running Locally
+
+### 11.1 Start Supabase Locally (Optional)
+
+If you want a local Supabase instance:
+
+```bash
+supabase start
+```
+
+This starts local Postgres, Auth, etc.
+Apply schema (migrations or SQL editor pointing to local instance).
+
+### 11.2 Run Next.js Dev Server
+
+```bash
+pnpm dev
+# or
+npm run dev
+# or
+yarn dev
+```
+
+By default, app should be available at `http://localhost:3000`.
+
+---
+
+## 12. Frontend Pages & UX
+
+### 12.1 Clients Page
+
+* Shows table: Name, Tier, Trusted, Total Apps, Total Profit, Invited By, Created At.
+* Filters:
+
+  * Tier
+  * Trusted (yes/no)
+  * App (via join with `client_apps`)
+  * Status of client_apps
+* Actions:
+
+  * Create new client
+  * Click to open Client Detail
+
+### 12.2 Client Detail Page
+
+Sections:
+
+1. **Profile**
+
+   * Basic info (name, contact, email, tier, trusted)
+   * Who invited them
+   * Notes (editable)
+2. **Apps**
+
+   * Table of `client_apps`
+   * For each: app name, status, deposit amount, profit_client, profit_us, promotion, referral_link
+   * Buttons to update status (e.g. marked deposited, completed, paid)
+3. **Credentials**
+
+   * List of `credentials` related to this client
+   * Show email and username; handle password via secure flow
+4. **Debts**
+
+   * Debts where client is creditor or debtor
+5. **Payment Links**
+
+   * Links tied to this client
+6. **Quick actions**
+
+   * Add new app for client
+   * Add credential
+   * Add payment link
+
+### 12.3 Apps & Promotions Page
+
+* **Apps table**:
+
+  * Name, Type, Is Active, Total Clients, Total Profit
+* **App detail**:
+
+  * Promotions list
+  * Related client_apps
+  * Referral links for that app
+
+### 12.4 Pipeline / Kanban Page
+
+Columns:
+
+* `requested`
+* `registered`
+* `deposited`
+* `waiting_bonus`
+* `completed`
+* `paid`
+* `cancelled`
+
+Each card = one `client_apps` row.
+Drag-and-drop → update `status` (and maybe `deposited` / `finished` flags).
+
+### 12.5 Referral Links Page
+
+* Table with: app, url (shortened), owner, current_uses, max_uses, is_active.
+* Filters: app, active status, owner.
+* Actions: create/edit/disable link.
+
+### 12.6 Debts Page
+
+* Table: app, referral link, creditor, debtor, amount, status, created_at.
+* Filters: status, creditor, debtor, app.
+* Actions: mark settled, edit notes.
+
+### 12.7 Requests Page (MODULO)
+
+* Table: name, contact, requested_apps_raw, status, created_at.
+* Filters: status.
+* Actions:
+
+  * Link to existing client or create new client.
+  * Create one or multiple `client_apps` from request.
+  * Update request status (new/contacted/converted/rejected).
+
+### 12.8 Payment Links Page
+
+* Table: provider, url, amount, purpose, client, app, used, created_at, used_at.
+* Actions: create new link, mark as used.
+
+### 12.9 Slots Page
+
+* Table: name, provider, rtp_percentage, notes.
+* Sorting: default by `rtp_percentage` descending.
+
+### 12.10 Message Templates Page
+
+* Filters: app, language, step.
+* Search: in `name` or `content`.
+* Show message with a **Copy** button.
+
+---
+
+## 13. Testing & Validation
+
+* **Unit tests**: for data transformation/mapping (especially during migration).
+* **Integration tests**: for key flows:
+
+  * Create client → assign app → update status.
+  * Assign referral link and observe `current_uses` increment.
+  * Create and settle debts.
+* **Manual checks**:
+
+  * Compare some migrated clients against original Excel manually.
+  * Verify promotions, profits, and statuses match.
+
+---
+
+## 14. Contributing / Extending
+
+* Add role system (admin vs operator).
+* Add metrics dashboard (total profit by month, best apps, best clients).
+* Integrate directly with Google Forms API instead of manual CSV export.
+* Add notifications (e.g. when promo is about to expire).
+
+---
+
+## 15. Summary
+
+This README contains:
+
+* A precise **data model** matching the full Excel logic.
+* Step-by-step **Supabase** setup (schema, RLS, env).
+* Clear **frontend structure** and main pages.
+* A concrete **migration strategy** from Excel.
+* Guidance on **security** for credentials and sensitive flows.
+
+With this document, an AI agent or developer can implement the **entire system end-to-end** without losing any critical information from the original spreadsheets.
+
+```
+```

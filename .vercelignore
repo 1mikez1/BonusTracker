@@ -1,0 +1,25 @@
+# Data files (not needed for deployment)
+Data/
+*.csv
+*.xlsx
+*.xls
+
+# Documentation
+*.md
+README
+*.json.md
+
+# Scripts (migration scripts, not needed in production)
+scripts/
+
+# Error logs
+Error.txt
+*.log
+
+# PowerShell scripts
+*.ps1
+
+# Supabase local development files
+supabase/.branches/
+supabase/.temp/
+

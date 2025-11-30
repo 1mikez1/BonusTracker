@@ -43,6 +43,7 @@ export function NewSignupModal({
   // Step 1 - Client identification fields
   const [fullName, setFullName] = useState('');
   const [contact, setContact] = useState('');
+  const [email, setEmail] = useState('');
   const [invitedByClientId, setInvitedByClientId] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [foundExistingClient, setFoundExistingClient] = useState<Client | null>(null);
@@ -203,6 +204,7 @@ export function NewSignupModal({
       setStep('client');
       setFullName('');
       setContact('');
+      setEmail('');
       setInvitedByClientId('');
       setSelectedClient(null);
       setFoundExistingClient(null);
@@ -219,6 +221,7 @@ export function NewSignupModal({
       if (initialClientData) {
         setFullName(initialClientData.name || '');
         setContact(initialClientData.contact || '');
+        setEmail(initialClientData.email || '');
         // Auto-search if we have contact
         if (initialClientData.contact) {
           setTimeout(() => searchExistingClient(), 100);
@@ -268,7 +271,7 @@ export function NewSignupModal({
           name: firstName,
           surname: lastName,
           contact: contact.trim(),
-          email: null,
+          email: email.trim() || null,
           invited_by_client_id: invitedByClientId.trim() || null,
           trusted: false,
           tier_id: null
@@ -605,6 +608,25 @@ export function NewSignupModal({
                   width: '100%',
                   padding: '0.5rem',
                   border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '0.875rem'
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+                Email <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>(Optional)</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: email.trim() && email.includes('@') ? '2px solid #10b981' : '1px solid #cbd5e1',
                   borderRadius: '6px',
                   fontSize: '0.875rem'
                 }}

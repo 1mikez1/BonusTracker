@@ -215,13 +215,23 @@ export default function ClientDetailPage() {
   });
   
   const {
-    data: debts,
-    isLoading: debtsLoading,
-    error: debtsError,
-    mutate: mutateDebts
+    data: referralDebts,
+    isLoading: referralDebtsLoading,
+    error: referralDebtsError,
+    mutate: mutateReferralDebts
   } = useSupabaseData({
     table: 'referral_link_debts',
     select: '*, referral_links(*)'
+  });
+  
+  const {
+    data: depositDebts,
+    isLoading: depositDebtsLoading,
+    error: depositDebtsError,
+    mutate: mutateDepositDebts
+  } = useSupabaseData({
+    table: 'deposit_debts' as any,
+    select: '*, client_apps(*, apps(*), clients!client_id(*))'
   });
   
   const {
@@ -238,7 +248,8 @@ export default function ClientDetailPage() {
   const { data: allClients } = useSupabaseData({ table: 'clients' });
   
   const { insert: insertCredential, mutate: updateCredential, remove: removeCredential } = useSupabaseMutations('credentials', undefined, mutateCredentials);
-  const { insert: insertDebt, mutate: updateDebt, remove: removeDebt } = useSupabaseMutations('referral_link_debts', undefined, mutateDebts);
+  const { insert: insertDebt, mutate: updateDebt, remove: removeDebt } = useSupabaseMutations('referral_link_debts', undefined, mutateReferralDebts);
+  const { mutate: updateDepositDebt } = useSupabaseMutations('deposit_debts' as any, undefined, mutateDepositDebts);
   const { insert: insertPaymentLink, mutate: updatePaymentLink, remove: removePaymentLink } = useSupabaseMutations('payment_links', undefined, mutatePaymentLinks);
   const { insert: insertClientApp, remove: removeClientApp } = useSupabaseMutations('client_apps', undefined, mutateClientApps);
   
@@ -447,8 +458,8 @@ export default function ClientDetailPage() {
     order: { column: 'detected_at' as any, ascending: false }
   }) as { data: any[] | undefined; isLoading: boolean; error: any; mutate: () => void };
 
-  const isLoading = clientsLoading || appsLoading || debtsLoading || credentialsLoading || paymentLinksLoading || allAppsLoading || promotionsLoading || allMessageTemplatesLoading;
-  const error = clientsError || appsError || debtsError || credentialsError || paymentLinksError;
+  const isLoading = clientsLoading || appsLoading || referralDebtsLoading || depositDebtsLoading || credentialsLoading || paymentLinksLoading || allAppsLoading || promotionsLoading || allMessageTemplatesLoading;
+  const error = clientsError || appsError || referralDebtsError || depositDebtsError || credentialsError || paymentLinksError;
 
   // Auto-select first available promotion when app is selected
   useEffect(() => {
@@ -1058,7 +1069,8 @@ export default function ClientDetailPage() {
     try {
       await removeDebt(deleteModal.id, {
         onSuccess: () => {
-          mutateDebts();
+          mutateReferralDebts();
+          mutateDepositDebts();
           setDeleteModal({ isOpen: false, type: null, id: null });
         },
         onError: (error) => {
@@ -1102,7 +1114,8 @@ export default function ClientDetailPage() {
             setDebtDescription('');
             setDebtDebtorClientId('');
             setIsSavingDebt(false);
-            mutateDebts();
+            mutateReferralDebts();
+            mutateDepositDebts();
           },
           onError: (error) => {
             console.error('Error updating debt:', error);
@@ -1120,7 +1133,8 @@ export default function ClientDetailPage() {
             setDebtDescription('');
             setDebtDebtorClientId('');
             setIsSavingDebt(false);
-            mutateDebts();
+            mutateReferralDebts();
+            mutateDepositDebts();
           },
           onError: (error) => {
             console.error('Error saving debt:', error);
@@ -1768,7 +1782,8 @@ export default function ClientDetailPage() {
 
   // Ensure all data arrays are actually arrays
   const clientAppsArray = Array.isArray(clientApps) ? clientApps : [];
-  const debtsArray = Array.isArray(debts) ? debts : [];
+  const referralDebtsArray = Array.isArray(referralDebts) ? referralDebts : [];
+  const depositDebtsArray = Array.isArray(depositDebts) ? depositDebts : [];
   const credentialsArray = Array.isArray(credentials) ? credentials : [];
   const paymentLinksArray = Array.isArray(paymentLinks) ? paymentLinks : [];
 
@@ -1787,7 +1802,9 @@ export default function ClientDetailPage() {
     });
 
   const allClientsArray = Array.isArray(allClients) ? allClients : [];
-  const clientDebts = debtsArray
+  
+  // Process referral_link_debts
+  const referralClientDebts = referralDebtsArray
     .filter((debt: any) => debt?.creditor_client_id === client.id || debt?.debtor_client_id === client.id)
     .map((debt: any) => {
       // Resolve creditor and debtor from allClients array
@@ -1797,10 +1814,37 @@ export default function ClientDetailPage() {
         : null;
       return {
         ...debt,
+        type: 'referral' as const,
         creditor_client: creditor,
         debtor_client: debtor
       };
     });
+  
+  // Process deposit_debts (these are linked to client_apps, which have client_id)
+  const depositClientDebts = depositDebtsArray
+    .filter((debt: any) => {
+      // Check if the debt's client_app belongs to this client
+      const clientApp = debt?.client_apps;
+      return clientApp && clientApp.client_id === client.id;
+    })
+    .map((debt: any) => {
+      const clientApp = debt?.client_apps;
+      const app = clientApp?.apps;
+      return {
+        ...debt,
+        type: 'deposit' as const,
+        client_app: clientApp,
+        app: app,
+        // For deposit debts, the client is the debtor (they owe us)
+        debtor_client_id: client.id,
+        creditor_client_id: null, // "Us" - no specific creditor client
+        amount: debt.amount || 0,
+        status: debt.status || 'open'
+      };
+    });
+  
+  // Combine both types of debts
+  const clientDebts = [...referralClientDebts, ...depositClientDebts];
   const clientCredentials = credentialsArray;
   const clientPaymentLinks = paymentLinksArray;
 
@@ -4700,54 +4744,114 @@ export default function ClientDetailPage() {
               <tbody>
                 {clientDebts.map((debt: any) => {
                   const link = debt.referral_links;
+                  const isDepositDebt = debt.type === 'deposit';
                   const isCreditor = debt.creditor_client_id === client.id;
                   const otherParty = isCreditor ? debt.debtor_client : debt.creditor_client;
                   return (
                     <tr key={debt.id}>
                       <td>
-                        {isCreditor ? 'Creditor' : 'Debtor'}
-                        {otherParty && (
-                          <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
-                            with {otherParty.name} {otherParty.surname ?? ''}
-                          </div>
+                        {isDepositDebt ? (
+                          <>
+                            <span>Debtor (Deposit)</span>
+                            {debt.app && (
+                              <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                App: {debt.app.name}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {isCreditor ? 'Creditor' : 'Debtor'}
+                            {otherParty && (
+                              <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                with {otherParty.name} {otherParty.surname ?? ''}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td>€{Number(debt.amount).toFixed(2)}</td>
                       <td>
                         <StatusBadge status={debt.status} />
                       </td>
-                      <td>{debt.description ?? '—'}</td>
-                      <td>{link?.url ?? '—'}</td>
+                      <td>{debt.description || debt.deposit_source || '—'}</td>
+                      <td>{isDepositDebt ? '—' : (link?.url ?? '—')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button
-                            onClick={() => handleEditDebt(debt)}
-                            style={{
-                              padding: '0.25rem 0.5rem',
-                              backgroundColor: '#3b82f6',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem'
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteDebt(debt)}
-                            style={{
-                              padding: '0.25rem 0.5rem',
-                              backgroundColor: '#ef4444',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '0.8rem'
-                            }}
-                          >
-                            Delete
-                          </button>
+                          {!isDepositDebt && (
+                            <>
+                              <button
+                                onClick={() => handleEditDebt(debt)}
+                                style={{
+                                  padding: '0.25rem 0.5rem',
+                                  backgroundColor: '#3b82f6',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.8rem'
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDebt(debt)}
+                                style={{
+                                  padding: '0.25rem 0.5rem',
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.8rem'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+                          {isDepositDebt && debt.status !== 'settled' && (
+                            <button
+                              onClick={async () => {
+                                const supabase = getSupabaseClient();
+                                if (supabase && debt.client_app_id) {
+                                  try {
+                                    await supabase
+                                      .from('client_apps')
+                                      .update({ 
+                                        deposit_paid_back: true,
+                                        deposit_paid_back_at: new Date().toISOString()
+                                      } as any)
+                                      .eq('id', debt.client_app_id);
+                                    await mutateDepositDebts();
+                                    setToast({
+                                      isOpen: true,
+                                      message: 'Deposit marked as paid back.',
+                                      type: 'success'
+                                    });
+                                  } catch (error) {
+                                    console.error('Error marking deposit as paid:', error);
+                                    setToast({
+                                      isOpen: true,
+                                      message: 'Failed to mark deposit as paid.',
+                                      type: 'error'
+                                    });
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem'
+                              }}
+                            >
+                              Mark Paid
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

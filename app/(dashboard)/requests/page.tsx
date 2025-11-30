@@ -6,15 +6,19 @@ import { DataTable } from '@/components/DataTable';
 import { FiltersBar } from '@/components/FiltersBar';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { useSupabaseMutations } from '@/lib/useSupabaseMutations';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ErrorMessage } from '@/components/ErrorMessage';
 import { EmptyState } from '@/components/EmptyState';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { NewSignupModal } from '@/components/NewSignupModal';
 import { Toast } from '@/components/Toast';
 
 export default function RequestsPage() {
+  const router = useRouter();
+  
   const {
     data: requests,
     isLoading: requestsLoading,
@@ -93,6 +97,11 @@ export default function RequestsPage() {
 
   // Helper function to check if request is from existing client
   const isExistingClientRequest = (request: any): { isExisting: boolean; clientId: string | null; matchMethod?: string } => {
+    // If request is converted, don't show as existing client
+    if (request.status === 'converted') {
+      return { isExisting: false, clientId: request.client_id };
+    }
+    
     // First check if explicitly linked
     if (request.client_id) {
       return { isExisting: true, clientId: request.client_id };
@@ -183,6 +192,11 @@ export default function RequestsPage() {
 
   // Helper function to check if requested apps already exist for client
   const getDuplicateApps = (request: any, clientId: string | null): any[] => {
+    // Don't show duplicate apps warning if request is converted
+    if (request.status === 'converted') {
+      return [];
+    }
+    
     if (!clientId || !Array.isArray(clientApps) || !Array.isArray(apps) || !request.requested_apps_raw) {
       return [];
     }
@@ -276,6 +290,200 @@ export default function RequestsPage() {
     }
   };
 
+  const handleConvertRequestToSignup = async (requestId: string) => {
+    if (isDemo) {
+      setToast({
+        isOpen: true,
+        message: 'Conversion is disabled in demo mode. Connect Supabase to enable this feature.',
+        type: 'error'
+      });
+      return;
+    }
+
+    const request = requests.find((r: any) => r.id === requestId);
+    if (!request) return;
+
+    try {
+      // Extract email from request
+      const formEmail = extractFormEmail(request);
+      const formNote = extractFormNote(request.notes || '');
+
+      // Check if client already exists (by name + contact)
+      let client = Array.isArray(clients) ? clients.find(
+        (c: any) => c.name.toLowerCase() === request.name.toLowerCase() && c.contact === request.contact
+      ) : null;
+
+      // Create or update client
+      if (!client) {
+        const [name, ...surnameParts] = request.name.split(' ');
+        const surname = surnameParts.join(' ') || null;
+        
+        const clientData: any = {
+          name: name.trim(),
+          surname: surname,
+          contact: request.contact || null,
+          email: formEmail || null,
+          trusted: false,
+          tier_id: null,
+          invited_by_client_id: null,
+          notes: formNote || `Converted from request ${requestId}`
+        };
+        console.log('💾 Creating new client with data:', {
+          name: clientData.name,
+          email: clientData.email,
+          hasEmail: !!clientData.email,
+          emailType: typeof clientData.email,
+          emailValue: clientData.email
+        });
+        client = await insertClient(clientData);
+        await mutateClients();
+        
+        // Verify email was saved by fetching the client again
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data: verifyClient } = await supabase.from('clients').select('id, name, email').eq('id', client.id).single();
+          console.log('✅ Client created and verified:', { 
+            id: client.id, 
+            email: (client as any).email,
+            verifiedEmail: verifyClient?.email 
+          });
+        } else {
+          console.log('✅ Client created:', { 
+            id: client.id, 
+            email: (client as any).email
+          });
+        }
+      } else {
+        // Update existing client with email if not already present
+        const updateData: any = {};
+        if (formEmail) {
+          const existingEmail = client.email || '';
+          if (existingEmail) {
+            const existingEmails = existingEmail.split('\n').map(e => e.replace(/\s*\(.*?\)\s*/g, '').trim()).filter(Boolean);
+            if (!existingEmails.includes(formEmail)) {
+              updateData.email = `${existingEmail}\n${formEmail}`;
+            }
+          } else {
+            updateData.email = formEmail;
+          }
+        }
+        if (formNote) {
+          const existingNotes = client.notes || '';
+          updateData.notes = existingNotes ? `${existingNotes}\n\n${formNote}` : formNote;
+        }
+        if (Object.keys(updateData).length > 0) {
+          await updateClient(updateData, client.id);
+          await mutateClients();
+        }
+      }
+
+      // Parse requested apps and create client_apps with status 'requested'
+      const requestedAppNames = parseRequestedApps(request);
+      let createdAppsCount = 0;
+      const unmatchedApps: string[] = [];
+
+      if (requestedAppNames.length > 0 && Array.isArray(apps)) {
+        // Helper function for app name matching with common typo corrections
+        const findMatchingApp = (requestedName: string): any | null => {
+          if (!Array.isArray(apps)) return null;
+          
+          const normalizedRequested = requestedName.toLowerCase().trim();
+          
+          const typoMappings: { [key: string]: string } = {
+            'revoult': 'revolut',
+            'revolute': 'revolut',
+            'revolutt': 'revolut',
+            'kraken exchange': 'kraken',
+            'by bit': 'bybit',
+            'b b v a': 'bbva',
+            'buddy bank': 'buddybank',
+            'isy bank': 'isybank',
+            'isbank': 'isybank',
+            'sisal casino': 'sisal',
+            'poker stars': 'pokerstars',
+            'trading 212': 'trading212',
+          };
+          
+          const correctedName = typoMappings[normalizedRequested] || normalizedRequested;
+          
+          // Strategy 1: Exact match (case-insensitive) with corrected name
+          let match = apps.find((app: any) => 
+            app.name.toLowerCase().trim() === correctedName
+          );
+          if (match) return match;
+          
+          // Strategy 2: Contains match (either direction)
+          match = apps.find((app: any) => {
+            const appName = app.name.toLowerCase().trim();
+            return appName.includes(correctedName) || correctedName.includes(appName);
+          });
+          if (match) return match;
+          
+          return null;
+        };
+
+        for (const appName of requestedAppNames) {
+          const matchedApp = findMatchingApp(appName);
+          
+          if (matchedApp) {
+            // Check if client_app already exists
+            const existingClientApp = Array.isArray(clientApps) 
+              ? clientApps.find((ca: any) => ca.client_id === client.id && ca.app_id === matchedApp.id)
+              : null;
+            
+            if (!existingClientApp) {
+              await insertClientApp({
+                client_id: client.id,
+                app_id: matchedApp.id,
+                status: 'requested',
+                deposited: false,
+                finished: false,
+                started_at: new Date().toISOString()
+              });
+              createdAppsCount++;
+            }
+          } else {
+            unmatchedApps.push(appName);
+          }
+        }
+        
+        if (createdAppsCount > 0) {
+          await mutateClientApps();
+        }
+      }
+
+      // Update request status
+      await updateRequest({ status: 'converted', client_id: client.id, processed_at: new Date().toISOString() }, requestId);
+      await mutateRequests();
+
+      let message = 'Request converted to signup successfully!';
+      if (createdAppsCount > 0) {
+        message += ` Created ${createdAppsCount} app workflow(s) with status "requested".`;
+      }
+      if (unmatchedApps.length > 0) {
+        message += ` Could not match: ${unmatchedApps.join(', ')}.`;
+      }
+      
+      setToast({
+        isOpen: true,
+        message,
+        type: unmatchedApps.length > 0 ? 'info' : 'success'
+      });
+
+      // Redirect to client profile after a short delay to show the toast
+      setTimeout(() => {
+        router.push(`/clients/${client.id}`);
+      }, 1500);
+    } catch (error: any) {
+      console.error('Failed to convert request to signup:', error);
+      setToast({
+        isOpen: true,
+        message: `Failed to convert request: ${error?.message || 'Unknown error'}`,
+        type: 'error'
+      });
+    }
+  };
+
   const handleUpdateStatus = async (requestId: string, newStatus: string) => {
     if (isDemo) {
       alert('Status updates are disabled in demo mode.');
@@ -298,22 +506,29 @@ export default function RequestsPage() {
     try {
       // Try to find the "Full responses" JSON in the notes
       const fullResponsesMatch = requestNotes.match(/Full responses: ({.*})/);
-      if (fullResponsesMatch) {
-        const responsesJson = JSON.parse(fullResponsesMatch[1]);
-        
-        // Look for the "Note:" field in the responses
-        for (const [questionId, response] of Object.entries(responsesJson)) {
-          const resp = response as any;
-          if (resp.question && resp.question.toLowerCase().includes('note')) {
-            const answer = Array.isArray(resp.answer) ? resp.answer.join(', ') : resp.answer;
-            if (answer && answer.trim()) {
-              return answer.trim();
+      if (fullResponsesMatch && fullResponsesMatch[1]) {
+        try {
+          const responsesJson = JSON.parse(fullResponsesMatch[1]);
+          
+          // Look for the "Note:" field in the responses
+          if (responsesJson && typeof responsesJson === 'object') {
+            for (const [questionId, response] of Object.entries(responsesJson)) {
+              const resp = response as any;
+              if (resp && resp.question && resp.question.toLowerCase().includes('note')) {
+                const answer = Array.isArray(resp.answer) ? resp.answer.join(', ') : resp.answer;
+                if (answer && answer.trim()) {
+                  return answer.trim();
+                }
+              }
             }
           }
+        } catch (jsonError) {
+          console.warn('Error parsing Full responses JSON in extractFormNote:', jsonError);
+          // Continue without throwing
         }
       }
     } catch (error) {
-      console.error('Error parsing form responses:', error);
+      console.error('Error in extractFormNote:', error);
     }
     
     return null;
@@ -321,18 +536,29 @@ export default function RequestsPage() {
 
   // Helper function to extract email from request notes/form responses
   const extractFormEmail = (request: any): string | null => {
-    console.log('Extracting email from request:', { 
-      hasEmail: !!request.email, 
+    // First check if email is directly in request object (from email column)
+    // Use 'as any' because TypeScript types might not include email field yet
+    const requestEmail = (request as any).email;
+    
+    console.log('🔍 Extracting email from request:', { 
+      requestId: request.id,
+      requestName: request.name,
+      hasEmailField: 'email' in request,
+      emailValue: requestEmail,
+      emailType: typeof requestEmail,
+      emailIsValid: requestEmail && typeof requestEmail === 'string' && requestEmail.trim().includes('@'),
       hasNotes: !!request.notes,
       notesLength: request.notes?.length 
     });
     
-    // First check if email is directly in request object
-    if (request.email && typeof request.email === 'string' && request.email.trim()) {
-      const email = request.email.trim();
-      if (email.includes('@')) {
-        console.log('Found email in request.email:', email);
+    if (requestEmail && typeof requestEmail === 'string' && requestEmail.trim()) {
+      const email = requestEmail.trim();
+      // Validate email format
+      if (email.includes('@') && email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        console.log('✅ Found email in request.email column:', email);
         return email;
+      } else {
+        console.warn('⚠️ Email in request.email column is not valid:', email);
       }
     }
     
@@ -394,28 +620,33 @@ export default function RequestsPage() {
               }
             }
             
-            const responsesJson = JSON.parse(jsonStr.trim());
-            console.log('Parsed Full responses JSON, searching for email...', Object.keys(responsesJson).length, 'responses');
-            
-            // Look for email field in responses
-            for (const [questionId, response] of Object.entries(responsesJson)) {
-              const resp = response as any;
-              if (resp && resp.question) {
-                const questionLower = resp.question.toLowerCase();
-                if (questionLower.includes('email') || questionLower.includes('mail')) {
-                  const answer = Array.isArray(resp.answer) ? resp.answer.join(', ') : resp.answer;
-                  if (answer && typeof answer === 'string') {
-                    const email = answer.trim();
-                    // Validate email format
-                    if (email.includes('@') && email.length > 5 && email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-                      console.log('Found email in responses:', email, 'from question:', resp.question);
-                      return email;
+            try {
+              const responsesJson = JSON.parse(jsonStr.trim());
+              console.log('Parsed Full responses JSON, searching for email...', Object.keys(responsesJson).length, 'responses');
+              
+              // Look for email field in responses
+              for (const [questionId, response] of Object.entries(responsesJson)) {
+                const resp = response as any;
+                if (resp && resp.question) {
+                  const questionLower = resp.question.toLowerCase();
+                  if (questionLower.includes('email') || questionLower.includes('mail')) {
+                    const answer = Array.isArray(resp.answer) ? resp.answer.join(', ') : resp.answer;
+                    if (answer && typeof answer === 'string') {
+                      const email = answer.trim();
+                      // Validate email format
+                      if (email.includes('@') && email.length > 5 && email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+                        console.log('Found email in responses:', email, 'from question:', resp.question);
+                        return email;
+                      }
                     }
                   }
                 }
               }
+              console.log('No email found in Full responses JSON');
+            } catch (jsonParseError) {
+              console.warn('Error parsing Full responses JSON:', jsonParseError);
+              // Continue to fallback methods
             }
-            console.log('No email found in Full responses JSON');
           } catch (parseError) {
             console.error('Error parsing JSON from notes:', parseError);
             // Try to extract email with a simpler regex as fallback
@@ -458,24 +689,31 @@ export default function RequestsPage() {
     if (request.notes) {
       try {
         const fullResponsesMatch = request.notes.match(/Full responses: ({.*})/);
-        if (fullResponsesMatch) {
-          const responsesJson = JSON.parse(fullResponsesMatch[1]);
-          
-          // Look for "app richieste" or similar fields
-          for (const [questionId, response] of Object.entries(responsesJson)) {
-            const resp = response as any;
-            if (resp.question && (
-              resp.question.toLowerCase().includes('app') || 
-              resp.question.toLowerCase().includes('richieste') ||
-              resp.question.toLowerCase().includes('bonus')
-            )) {
-              const answer = resp.answer;
-              if (Array.isArray(answer)) {
-                apps.push(...answer.map((a: string) => a.trim()));
-              } else if (answer) {
-                apps.push(answer.trim());
+        if (fullResponsesMatch && fullResponsesMatch[1]) {
+          try {
+            const responsesJson = JSON.parse(fullResponsesMatch[1]);
+            
+            // Look for "app richieste" or similar fields
+            if (responsesJson && typeof responsesJson === 'object') {
+              for (const [questionId, response] of Object.entries(responsesJson)) {
+                const resp = response as any;
+                if (resp && resp.question && (
+                  resp.question.toLowerCase().includes('app') || 
+                  resp.question.toLowerCase().includes('richieste') ||
+                  resp.question.toLowerCase().includes('bonus')
+                )) {
+                  const answer = resp.answer;
+                  if (Array.isArray(answer)) {
+                    apps.push(...answer.map((a: string) => a.trim()));
+                  } else if (answer) {
+                    apps.push(answer.trim());
+                  }
+                }
               }
             }
+          } catch (jsonError) {
+            console.warn('Error parsing Full responses JSON in parseRequestedApps:', jsonError);
+            // Continue without throwing
           }
         }
       } catch (error) {
@@ -655,31 +893,32 @@ export default function RequestsPage() {
           const existingContact = client.contact || '';
           
           if (existingContact) {
-            // Normalize existing contacts: split by newline OR space, then join with newlines
-            // This handles cases where contacts might be space-separated
+            // Split existing contacts by newline only (preserve structure)
             const existingContacts = existingContact
-              .split(/\s+/) // Split by any whitespace (space, newline, tab, etc.)
+              .split('\n')
               .map(c => c.replace(/\s*\(.*?\)\s*/g, '').trim()) // Remove (original), (from form) labels
               .filter(Boolean);
             
             // Check if new contact is already in the list
             if (!existingContacts.includes(newContact)) {
-              // Join all contacts with newlines (normalize to newline separator)
-              updateData.contact = [...existingContacts, newContact].join('\n');
+              // Add new contact on a new line
+              updateData.contact = `${existingContact}\n${newContact}`;
+              console.log('✅ Merge - Adding new contact to existing list:', updateData.contact);
             } else {
-              // If already exists, just normalize the existing contacts with newlines
-              updateData.contact = existingContacts.join('\n');
+              console.log('⚠️ Merge - Contact already exists in list, skipping');
             }
           } else {
             // No existing contact - just use new one
             updateData.contact = newContact;
+            console.log('✅ Merge - Setting new contact (first one):', updateData.contact);
           }
         }
         
         // Append email - keep all values, one per line, always add new ones (no limit)
         const formEmail = extractFormEmail(request);
-        console.log('Extracted email from request:', formEmail, 'Request object:', {
-          email: request.email,
+        console.log('🔍 Merge - Extracted email from request:', formEmail, 'Request object:', {
+          hasEmailField: 'email' in request,
+          emailValue: (request as any).email,
           notes: request.notes?.substring(0, 500)
         });
         
@@ -697,37 +936,58 @@ export default function RequestsPage() {
             if (!existingEmails.includes(formEmail)) {
               // Add new email on a new line (always add, no limit)
               updateData.email = `${existingEmail}\n${formEmail}`;
-              console.log('Adding new email to existing list:', updateData.email);
+              console.log('✅ Merge - Adding new email to existing list:', updateData.email);
             } else {
-              console.log('Email already exists in list, skipping');
+              console.log('⚠️ Merge - Email already exists in list, skipping');
             }
           } else {
             // No existing email - just use new one
             updateData.email = formEmail;
-            console.log('Setting new email (first one):', updateData.email);
+            console.log('✅ Merge - Setting new email (first one):', updateData.email);
           }
         } else {
-          console.log('No email extracted from request - checking notes:', request.notes?.substring(0, 300));
+          console.log('❌ Merge - No email extracted from request - checking notes:', request.notes?.substring(0, 300));
         }
         
         // Extract and add only the form note (not the entire webhook payload)
         const formNote = extractFormNote(request.notes || '');
         if (formNote) {
           const existingNotes = client.notes || '';
-          updateData.notes = existingNotes 
-            ? `${existingNotes}\n\n${formNote}` 
-            : formNote;
+          if (existingNotes) {
+            // Add new note on a new line with separator
+            updateData.notes = `${existingNotes}\n\n---\n\n${formNote}`;
+            console.log('✅ Merge - Adding new note to existing notes');
+          } else {
+            updateData.notes = formNote;
+            console.log('✅ Merge - Setting new note (first one)');
+          }
         }
       }
 
       // Update client if there are changes
-      console.log('Update data before saving:', updateData);
+      console.log('💾 Merge - Update data before saving:', updateData);
       if (Object.keys(updateData).length > 0) {
-        const result = await updateClient(updateData, finalClientId);
-        console.log('Client update result:', result);
-        await mutateClients();
+        try {
+          const result = await updateClient(updateData, finalClientId);
+          console.log('✅ Merge - Client update result:', result);
+          
+          // Verify email was saved
+          const supabase = getSupabaseClient();
+          if (supabase && updateData.email) {
+            const { data: verifyClient } = await supabase.from('clients').select('id, name, email').eq('id', finalClientId).single();
+            console.log('✅ Merge - Verified email saved:', { 
+              requested: updateData.email,
+              saved: verifyClient?.email 
+            });
+          }
+          
+          await mutateClients();
+        } catch (updateError) {
+          console.error('❌ Merge - Error updating client:', updateError);
+          throw updateError;
+        }
       } else {
-        console.log('No update data to save');
+        console.log('⚠️ Merge - No update data to save');
       }
 
       // Helper function for app name matching with common typo corrections
@@ -1318,10 +1578,47 @@ export default function RequestsPage() {
             header: 'Status',
             render: (row) => {
               const { isExisting, matchMethod } = isExistingClientRequest(row);
+              // Custom status badges with different colors for new and converted
+              const getStatusBadge = (status: string) => {
+                if (status === 'new') {
+                  return (
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      backgroundColor: '#dbeafe',
+                      color: '#1e40af',
+                      border: '1px solid #93c5fd'
+                    }}>
+                      New
+                    </span>
+                  );
+                } else if (status === 'converted') {
+                  return (
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      backgroundColor: '#d1fae5',
+                      color: '#065f46',
+                      border: '1px solid #6ee7b7'
+                    }}>
+                      Converted
+                    </span>
+                  );
+                } else {
+                  return <StatusBadge status={status} />;
+                }
+              };
+              
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                  {!isExisting && <StatusBadge status={row.status} />}
-                  {isExisting && (
+                  {getStatusBadge(row.status)}
+                  {isExisting && row.status !== 'converted' && (
                     <span style={{ 
                       fontSize: '0.75rem', 
                       color: '#dc2626', 
@@ -1352,7 +1649,7 @@ export default function RequestsPage() {
               return (
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexDirection: 'column' }}>
                   {isExisting && (
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {row.status !== 'converted' && (
                         <button
                           onClick={() => handleMergeRequest(row)}
@@ -1370,56 +1667,39 @@ export default function RequestsPage() {
                           Merge
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDeleteRequest(row.id)}
-                        style={{
-                          padding: '0.35rem 0.75rem',
-                          fontSize: '0.85rem',
-                          background: '#dc2626',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontWeight: '500'
-                        }}
-                      >
-                        Delete
-                      </button>
                     </div>
                   )}
                   {!isExisting && row.status !== 'converted' && (
+                    <button
+                      onClick={() => handleConvertRequestToSignup(row.id)}
+                      style={{
+                        padding: '0.35rem 0.75rem',
+                        fontSize: '0.85rem',
+                        background: '#2563eb',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Convert to Signup
+                    </button>
+                  )}
                   <button
-                    onClick={() => {
-                      const request = requests.find((r: any) => r.id === row.id);
-                      if (request) {
-                        // Try to find matching app from requested_apps_raw
-                        const requestedAppsText = (request.requested_apps_raw || '').toLowerCase();
-                        const matchedApp = apps.find((app: any) => requestedAppsText.includes(app.name.toLowerCase()));
-                        
-                        setConvertRequestId(row.id);
-                        setConvertRequestData({
-                          name: request.name,
-                          contact: request.contact,
-                            email: request.contact || '',
-                          appId: matchedApp?.id,
-                          clientId: request.client_id
-                        });
-                        setShowNewSignupModal(true);
-                      }
-                    }}
+                    onClick={() => handleDeleteRequest(row.id)}
                     style={{
                       padding: '0.35rem 0.75rem',
                       fontSize: '0.85rem',
-                      background: '#2563eb',
+                      background: '#dc2626',
                       color: 'white',
                       border: 'none',
                       borderRadius: '6px',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      fontWeight: '500'
                     }}
                   >
-                    Convert to Signup
+                    Delete
                   </button>
-                )}
                   <select
                     value={row.status}
                     onChange={(e) => handleUpdateStatus(row.id, e.target.value)}

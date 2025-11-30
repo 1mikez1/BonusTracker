@@ -885,11 +885,38 @@ export function NewSignupModal({
                         }}
                       >
                         <option value="">No referral link</option>
-                        {(referralLinks || []).map((link: any) => (
-                          <option key={link.id} value={link.id}>
-                            {link.url}
-                          </option>
-                        ))}
+                        {(referralLinks || [])
+                          .filter((link: any) => {
+                            // Filter out links with 0 remaining uses
+                            if (link.max_uses !== null) {
+                              const remaining = link.max_uses - (link.current_uses || 0);
+                              if (remaining <= 0) return false;
+                            }
+                            return true;
+                          })
+                          .map((link: any) => {
+                            const accountName = link.account_name || '';
+                            const code = link.code || '';
+                            const url = link.normalized_url || link.url || '';
+                            const remaining = link.max_uses ? `${link.max_uses - link.current_uses} remaining` : 'unlimited';
+                            
+                            let displayText = '';
+                            if (accountName) {
+                              displayText = code 
+                                ? `${accountName} - ${code} - ${url} (${remaining})`
+                                : `${accountName} - ${url} (${remaining})`;
+                            } else {
+                              displayText = code 
+                                ? `${code} - ${url} (${remaining})`
+                                : `${url} (${remaining})`;
+                            }
+                            
+                            return (
+                              <option key={link.id} value={link.id}>
+                                {displayText}
+                              </option>
+                            );
+                          })}
                       </select>
                       <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.5rem', textAlign: 'center' }}>OR</div>
                       <input

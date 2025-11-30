@@ -1,5 +1,5 @@
 // Supabase Edge Function: Daily Fast-Check
-// Runs daily to identify top 5 critical issues (deadlines, delays, documents)
+// Advanced fast-check that identifies critical issues by category with configurable limits
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -7,7 +7,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // CORS configuration - can be restricted via ALLOWED_ORIGINS environment variable
 // Format: comma-separated list of origins, e.g., "https://example.com,https://app.example.com"
 // Default: "*" (allows all origins) - change this in production for better security
-const origin = Deno.env.get("ORIGIN") || "*"; // For backward compatibility
+const allowedOrigins = Deno.env.get("ALLOWED_ORIGINS")?.split(",").map(o => o.trim()) || ["*"];
+const origin = Deno.env.get("ORIGIN") || allowedOrigins[0] || "*"; // For backward compatibility
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": origin, // Default to * for backward compatibility
@@ -51,16 +52,19 @@ serve(async (req) => {
     const now = new Date();
     const daysAgo7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const daysAgo14 = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    
+    // Configurable limits per category (can be increased)
+    const LIMIT_PER_CATEGORY = 20; // Show up to 20 issues per category
 
     // Issue 1: Overdue Deadlines (Priority 1)
     const { data: overdueDeadlines, error: overdueError } = await supabase
       .from('client_apps')
-      .select('id, deadline_at, status, apps(name), clients!client_id(id, name, surname)')
+      .select('id, deadline_at, status, apps(name), clients!client_apps_client_id_fkey(id, name, surname)')
       .not('deadline_at', 'is', null)
       .lt('deadline_at', now.toISOString())
       .not('status', 'in', ['completed', 'paid', 'cancelled'])
       .order('deadline_at', { ascending: true })
-      .limit(5);
+      .limit(LIMIT_PER_CATEGORY);
 
     if (!overdueError && overdueDeadlines) {
       for (const app of overdueDeadlines) {
@@ -90,13 +94,13 @@ serve(async (req) => {
     const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
     const { data: dueSoon, error: dueSoonError } = await supabase
       .from('client_apps')
-      .select('id, deadline_at, status, apps(name), clients!client_id(id, name, surname)')
+      .select('id, deadline_at, status, apps(name), clients!client_apps_client_id_fkey(id, name, surname)')
       .not('deadline_at', 'is', null)
       .gte('deadline_at', now.toISOString())
       .lte('deadline_at', in48h.toISOString())
       .not('status', 'in', ['completed', 'paid', 'cancelled'])
       .order('deadline_at', { ascending: true })
-      .limit(5);
+      .limit(LIMIT_PER_CATEGORY);
 
     if (!dueSoonError && dueSoon) {
       for (const app of dueSoon) {
@@ -125,11 +129,11 @@ serve(async (req) => {
     // Issue 3: Stale Updates (no update in 14+ days) (Priority 3)
     const { data: staleUpdates, error: staleError } = await supabase
       .from('client_apps')
-      .select('id, updated_at, status, apps(name), clients!client_id(id, name, surname)')
+      .select('id, updated_at, status, apps(name), clients!client_apps_client_id_fkey(id, name, surname)')
       .not('status', 'in', ['completed', 'paid', 'cancelled'])
       .lt('updated_at', daysAgo14.toISOString())
       .order('updated_at', { ascending: true })
-      .limit(5);
+      .limit(LIMIT_PER_CATEGORY);
 
     if (!staleError && staleUpdates) {
       for (const app of staleUpdates) {
@@ -158,11 +162,11 @@ serve(async (req) => {
     // Issue 4: Missing Deposit (status = registered but no deposit) (Priority 4)
     const { data: missingDeposits, error: depositError } = await supabase
       .from('client_apps')
-      .select('id, status, deposited, deposit_amount, apps(name), clients!client_id(id, name, surname)')
+      .select('id, status, deposited, deposit_amount, apps(name), clients!client_apps_client_id_fkey(id, name, surname)')
       .eq('status', 'registered')
       .eq('deposited', false)
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(LIMIT_PER_CATEGORY);
 
     if (!depositError && missingDeposits) {
       for (const app of missingDeposits) {
@@ -192,7 +196,7 @@ serve(async (req) => {
       .eq('status', 'new')
       .lt('created_at', daysAgo7.toISOString())
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(LIMIT_PER_CATEGORY);
 
     if (!requestsError && pendingRequests) {
       for (const request of pendingRequests) {
@@ -219,9 +223,53 @@ serve(async (req) => {
       }
     }
 
-    // Sort by priority and return top 5
-    issues.sort((a, b) => a.priority - b.priority);
-    const top5 = issues.slice(0, 5);
+    // Group issues by type
+    const issuesByType: Record<string, FastCheckIssue[]> = {
+      overdue_deadline: [],
+      due_soon: [],
+      stale_update: [],
+      missing_deposit: [],
+      pending_document: []
+    };
+
+    issues.forEach(issue => {
+      issuesByType[issue.type].push(issue);
+    });
+
+    // Sort each category by priority (most critical first)
+    Object.keys(issuesByType).forEach(type => {
+      issuesByType[type].sort((a, b) => {
+        // First by priority, then by metadata (days overdue, hours until, etc.)
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        
+        // For overdue: most overdue first
+        if (a.type === 'overdue_deadline' && a.metadata.days_overdue && b.metadata.days_overdue) {
+          return b.metadata.days_overdue - a.metadata.days_overdue;
+        }
+        
+        // For due soon: soonest first
+        if (a.type === 'due_soon' && a.metadata.hours_until && b.metadata.hours_until) {
+          return a.metadata.hours_until - b.metadata.hours_until;
+        }
+        
+        // For stale: oldest first
+        if (a.type === 'stale_update' && a.metadata.days_since_update && b.metadata.days_since_update) {
+          return b.metadata.days_since_update - a.metadata.days_since_update;
+        }
+        
+        return 0;
+      });
+    });
+
+    // Get overall top 5 most critical (for quick overview)
+    const allIssuesSorted = [...issues].sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.type === 'overdue_deadline' && a.metadata.days_overdue && b.metadata.days_overdue) {
+        return b.metadata.days_overdue - a.metadata.days_overdue;
+      }
+      return 0;
+    });
+    const top5 = allIssuesSorted.slice(0, 5);
 
     return new Response(
       JSON.stringify({
@@ -229,12 +277,19 @@ serve(async (req) => {
         timestamp: now.toISOString(),
         total_issues: issues.length,
         top_5: top5,
+        by_category: {
+          overdue_deadline: issuesByType.overdue_deadline,
+          due_soon: issuesByType.due_soon,
+          stale_update: issuesByType.stale_update,
+          missing_deposit: issuesByType.missing_deposit,
+          pending_document: issuesByType.pending_document
+        },
         by_type: {
-          overdue_deadline: issues.filter(i => i.type === 'overdue_deadline').length,
-          due_soon: issues.filter(i => i.type === 'due_soon').length,
-          stale_update: issues.filter(i => i.type === 'stale_update').length,
-          missing_deposit: issues.filter(i => i.type === 'missing_deposit').length,
-          pending_document: issues.filter(i => i.type === 'pending_document').length
+          overdue_deadline: issuesByType.overdue_deadline.length,
+          due_soon: issuesByType.due_soon.length,
+          stale_update: issuesByType.stale_update.length,
+          missing_deposit: issuesByType.missing_deposit.length,
+          pending_document: issuesByType.pending_document.length
         }
       }),
       {

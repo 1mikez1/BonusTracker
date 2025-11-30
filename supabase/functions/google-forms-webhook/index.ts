@@ -315,7 +315,7 @@ serve(async (req) => {
           threshold: 0.70,
           passed: bestMatch.confidence > 0.70
         });
-      } else {
+          } else {
         log('info', 'No name match found above threshold', {
           searchedName: fullName,
           threshold: 0.70

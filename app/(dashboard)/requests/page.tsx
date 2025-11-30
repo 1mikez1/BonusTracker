@@ -1352,7 +1352,7 @@ export default function RequestsPage() {
               return (
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexDirection: 'column' }}>
                   {isExisting && (
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {row.status !== 'converted' && (
                         <button
                           onClick={() => handleMergeRequest(row)}
@@ -1388,38 +1388,38 @@ export default function RequestsPage() {
                     </div>
                   )}
                   {!isExisting && row.status !== 'converted' && (
-                    <button
-                      onClick={() => {
-                        const request = requests.find((r: any) => r.id === row.id);
-                        if (request) {
-                          // Try to find matching app from requested_apps_raw
-                          const requestedAppsText = (request.requested_apps_raw || '').toLowerCase();
-                          const matchedApp = apps.find((app: any) => requestedAppsText.includes(app.name.toLowerCase()));
-                          
-                          setConvertRequestId(row.id);
-                          setConvertRequestData({
-                            name: request.name,
-                            contact: request.contact,
+                  <button
+                    onClick={() => {
+                      const request = requests.find((r: any) => r.id === row.id);
+                      if (request) {
+                        // Try to find matching app from requested_apps_raw
+                        const requestedAppsText = (request.requested_apps_raw || '').toLowerCase();
+                        const matchedApp = apps.find((app: any) => requestedAppsText.includes(app.name.toLowerCase()));
+                        
+                        setConvertRequestId(row.id);
+                        setConvertRequestData({
+                          name: request.name,
+                          contact: request.contact,
                             email: request.contact || '',
-                            appId: matchedApp?.id,
-                            clientId: request.client_id
-                          });
-                          setShowNewSignupModal(true);
-                        }
-                      }}
-                      style={{
-                        padding: '0.35rem 0.75rem',
-                        fontSize: '0.85rem',
-                        background: '#2563eb',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Convert to Signup
-                    </button>
-                  )}
+                          appId: matchedApp?.id,
+                          clientId: request.client_id
+                        });
+                        setShowNewSignupModal(true);
+                      }
+                    }}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      fontSize: '0.85rem',
+                      background: '#2563eb',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Convert to Signup
+                  </button>
+                )}
                   <select
                     value={row.status}
                     onChange={(e) => handleUpdateStatus(row.id, e.target.value)}
@@ -1436,7 +1436,7 @@ export default function RequestsPage() {
                     <option value="converted">Converted</option>
                     <option value="rejected">Rejected</option>
                   </select>
-                </div>
+              </div>
               );
             }
           }

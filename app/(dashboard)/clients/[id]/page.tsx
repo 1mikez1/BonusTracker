@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { useSupabaseMutations } from '@/lib/useSupabaseMutations';
 import { getSupabaseClient } from '@/lib/supabaseClient';
@@ -52,9 +52,60 @@ export default function ClientDetailPage() {
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [showDebtForm, setShowDebtForm] = useState(false);
   const [showPaymentLinkForm, setShowPaymentLinkForm] = useState(false);
+  const [showErrorForm, setShowErrorForm] = useState(false);
   const [editingCredentialId, setEditingCredentialId] = useState<string | null>(null);
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [editingPaymentLinkId, setEditingPaymentLinkId] = useState<string | null>(null);
+  
+  // Error flagging form fields
+  const [errorType, setErrorType] = useState('');
+  const [errorTypeInput, setErrorTypeInput] = useState(''); // For autocomplete input
+  const [showErrorTypeDropdown, setShowErrorTypeDropdown] = useState(false);
+  const [errorSeverity, setErrorSeverity] = useState<'critical' | 'warning' | 'info'>('warning');
+  const [errorTitle, setErrorTitle] = useState('');
+  const [errorDescription, setErrorDescription] = useState('');
+  const [errorClientAppId, setErrorClientAppId] = useState('');
+  const [isSavingError, setIsSavingError] = useState(false);
+  
+  // Error editing state
+  const [editingErrorId, setEditingErrorId] = useState<string | null>(null);
+  const [editingErrorType, setEditingErrorType] = useState('');
+  const [editingErrorTypeInput, setEditingErrorTypeInput] = useState(''); // For autocomplete input
+  const [showEditingErrorTypeDropdown, setShowEditingErrorTypeDropdown] = useState(false);
+  const [editingErrorSeverity, setEditingErrorSeverity] = useState<'critical' | 'warning' | 'info'>('warning');
+  const [editingErrorTitle, setEditingErrorTitle] = useState('');
+  const [editingErrorDescription, setEditingErrorDescription] = useState('');
+  const [editingErrorClientAppId, setEditingErrorClientAppId] = useState('');
+  const [isSavingErrorEdit, setIsSavingErrorEdit] = useState(false);
+  
+  // Predefined error types for autocomplete
+  const predefinedErrorTypes = useMemo(() => [
+    { value: 'document_rejected', label: '📄 Document Rejected' },
+    { value: 'deadline_missed', label: '⏰ Deadline Missed' },
+    { value: 'referral_incoherent', label: '🔗 Referral Incoherent' },
+    { value: 'missing_steps', label: '📋 Missing Steps' },
+    { value: 'note_error', label: '📝 Note Error' },
+    { value: 'csv_import_incoherent', label: '📊 CSV Import Incoherent' },
+    { value: 'missing_deposit', label: '💰 Missing Deposit' },
+    { value: 'stale_update', label: '🕐 Stale Update' },
+    { value: 'status_mismatch', label: '🔄 Status Mismatch' },
+  ], []);
+  
+  // Filtered error types for flagging form
+  const filteredErrorTypes = useMemo(() => {
+    if (!errorTypeInput) return predefinedErrorTypes;
+    return predefinedErrorTypes.filter(type =>
+      type.label.toLowerCase().includes(errorTypeInput.toLowerCase())
+    );
+  }, [errorTypeInput, predefinedErrorTypes]);
+  
+  // Filtered error types for editing form
+  const filteredEditingErrorTypes = useMemo(() => {
+    if (!editingErrorTypeInput) return predefinedErrorTypes;
+    return predefinedErrorTypes.filter(type =>
+      type.label.toLowerCase().includes(editingErrorTypeInput.toLowerCase())
+    );
+  }, [editingErrorTypeInput, predefinedErrorTypes]);
   
   // Delete confirmation modal state
   const [deleteModal, setDeleteModal] = useState<{
@@ -66,6 +117,13 @@ export default function ClientDetailPage() {
     isOpen: false,
     type: null,
     id: null
+  });
+
+  // Clear all errors confirmation modal state
+  const [clearAllModal, setClearAllModal] = useState<{
+    isOpen: boolean;
+  }>({
+    isOpen: false
   });
   
   // Credential form fields
@@ -95,11 +153,14 @@ export default function ClientDetailPage() {
   // Start app process form state
   const [showStartAppForm, setShowStartAppForm] = useState(false);
   const [startAppAppId, setStartAppAppId] = useState('');
+  const [startAppAppSearch, setStartAppAppSearch] = useState('');
+  const [showStartAppDropdown, setShowStartAppDropdown] = useState(false);
   const [startAppPromotionId, setStartAppPromotionId] = useState('');
   const [startAppReferralLinkId, setStartAppReferralLinkId] = useState('');
   const [startAppCustomReferralLink, setStartAppCustomReferralLink] = useState('');
   const [startAppNotes, setStartAppNotes] = useState('');
   const [isSavingStartApp, setIsSavingStartApp] = useState(false);
+  const startAppInputRef = useRef<HTMLInputElement>(null);
   
   // Toast notification state
   const [toast, setToast] = useState<{
@@ -177,6 +238,161 @@ export default function ClientDetailPage() {
   const { insert: insertDebt, mutate: updateDebt, remove: removeDebt } = useSupabaseMutations('referral_link_debts', undefined, mutateDebts);
   const { insert: insertPaymentLink, mutate: updatePaymentLink, remove: removePaymentLink } = useSupabaseMutations('payment_links', undefined, mutatePaymentLinks);
   const { insert: insertClientApp, remove: removeClientApp } = useSupabaseMutations('client_apps', undefined, mutateClientApps);
+  
+  // Client errors mutations - using direct Supabase client since client_errors might not be in types
+  const insertClientError = async (errorData: any, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      const err = new Error('Supabase client not initialized');
+      console.error('insertClientError: Supabase client not initialized');
+      options?.onError?.(err);
+      throw err;
+    }
+    
+    try {
+      console.log('insertClientError: Inserting error data:', errorData);
+      const { data, error } = await (supabase as any)
+        .from('client_errors')
+        .insert(errorData)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('insertClientError: Database error:', error);
+        throw error;
+      }
+      
+      console.log('insertClientError: Success, data:', data);
+      options?.onSuccess?.();
+      return data;
+    } catch (error: any) {
+      console.error('insertClientError: Exception caught:', error);
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      options?.onError?.(error);
+      throw new Error(`Failed to insert error: ${errorMessage}`);
+    }
+  };
+
+  const updateClientError = async (errorId: string, errorData: any, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      const err = new Error('Supabase client not initialized');
+      options?.onError?.(err);
+      throw err;
+    }
+    
+    try {
+      const { data, error } = await (supabase as any)
+        .from('client_errors')
+        .update(errorData)
+        .eq('id', errorId)
+        .select()
+        .single();
+      
+      if (error) {
+        throw error;
+      }
+      
+      options?.onSuccess?.();
+      return data;
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      options?.onError?.(error);
+      throw new Error(`Failed to update error: ${errorMessage}`);
+    }
+  };
+
+  const resolveClientError = async (errorId: string, resolved: boolean, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      const err = new Error('Supabase client not initialized');
+      options?.onError?.(err);
+      throw err;
+    }
+    
+    try {
+      const updateData = resolved 
+        ? { resolved_at: new Date().toISOString() }
+        : { resolved_at: null };
+      
+      const { data, error } = await (supabase as any)
+        .from('client_errors')
+        .update(updateData)
+        .eq('id', errorId)
+        .select()
+        .single();
+      
+      if (error) {
+        throw error;
+      }
+      
+      options?.onSuccess?.();
+      return data;
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      options?.onError?.(error);
+      throw new Error(`Failed to ${resolved ? 'resolve' : 'reopen'} error: ${errorMessage}`);
+    }
+  };
+
+  const clearClientError = async (errorId: string, cleared: boolean, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      const err = new Error('Supabase client not initialized');
+      options?.onError?.(err);
+      throw err;
+    }
+    
+    try {
+      const updateData = cleared 
+        ? { cleared_at: new Date().toISOString() }
+        : { cleared_at: null };
+      
+      const { data, error } = await (supabase as any)
+        .from('client_errors')
+        .update(updateData)
+        .eq('id', errorId)
+        .select()
+        .single();
+      
+      if (error) {
+        throw error;
+      }
+      
+      options?.onSuccess?.();
+      return data;
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      options?.onError?.(error);
+      throw new Error(`Failed to ${cleared ? 'clear' : 'unclear'} error: ${errorMessage}`);
+    }
+  };
+
+  const deleteClientError = async (errorId: string, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      const err = new Error('Supabase client not initialized');
+      options?.onError?.(err);
+      throw err;
+    }
+    
+    try {
+      const { error } = await (supabase as any)
+        .from('client_errors')
+        .delete()
+        .eq('id', errorId);
+      
+      if (error) {
+        throw error;
+      }
+      
+      options?.onSuccess?.();
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      options?.onError?.(error);
+      throw new Error(`Failed to delete error: ${errorMessage}`);
+    }
+  };
 
   const {
     data: allApps,
@@ -215,8 +431,49 @@ export default function ClientDetailPage() {
     order: { column: 'step_order', ascending: true }
   });
 
+  // Fetch client errors for this client
+  const {
+    data: clientErrors,
+    isLoading: errorsLoading,
+    error: errorsError,
+    mutate: mutateErrors
+  } = useSupabaseData({
+    table: 'client_errors' as any,
+    select: 'id, error_type, severity, title, description, detected_at, resolved_at, cleared_at, client_id, client_app_id, client_apps(id, apps(name))',
+    match: clientId ? { client_id: clientId } : undefined,
+    order: { column: 'detected_at' as any, ascending: false }
+  }) as { data: any[] | undefined; isLoading: boolean; error: any; mutate: () => void };
+
   const isLoading = clientsLoading || appsLoading || debtsLoading || credentialsLoading || paymentLinksLoading || allAppsLoading || promotionsLoading || allMessageTemplatesLoading;
   const error = clientsError || appsError || debtsError || credentialsError || paymentLinksError;
+
+  // Auto-select first available promotion when app is selected
+  useEffect(() => {
+    if (startAppAppId && !startAppPromotionId && Array.isArray(allPromotions)) {
+      const availablePromotions = allPromotions.filter((promo: any) => {
+        if (promo.app_id !== startAppAppId) return false;
+        if (promo.is_active === false) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (promo.start_date) {
+          const startDate = new Date(promo.start_date);
+          startDate.setHours(0, 0, 0, 0);
+          if (today < startDate) return false;
+        }
+        if (promo.end_date) {
+          const endDate = new Date(promo.end_date);
+          endDate.setHours(23, 59, 59, 999);
+          if (today > endDate) return false;
+        }
+        return true;
+      });
+      
+      if (availablePromotions.length > 0) {
+        // Select the first available promotion
+        setStartAppPromotionId(availablePromotions[0].id);
+      }
+    }
+  }, [startAppAppId, allPromotions, startAppPromotionId]);
 
   const client = clients.find((item: any) => item.id === clientId);
   
@@ -1122,6 +1379,319 @@ export default function ClientDetailPage() {
     }
   };
   
+  // Handle flag error
+  const handleFlagError = async () => {
+    if (!clientId || !errorType || !errorTitle.trim()) {
+      alert('Please fill in Error Type and Title');
+      return;
+    }
+    
+    setIsSavingError(true);
+    try {
+      const errorData: any = {
+        client_id: clientId,
+        client_app_id: errorClientAppId || null,
+        error_type: errorType,
+        severity: errorSeverity,
+        title: errorTitle.trim(),
+        description: errorDescription.trim() || null
+      };
+      
+      console.log('handleFlagError: Starting error flagging with data:', errorData);
+      
+      await insertClientError(errorData, {
+        onSuccess: () => {
+          console.log('handleFlagError: Success callback called');
+          setShowErrorForm(false);
+          setErrorType('');
+          setErrorTypeInput('');
+          setErrorSeverity('warning');
+          setErrorTitle('');
+          setErrorDescription('');
+          setErrorClientAppId('');
+          setIsSavingError(false);
+          mutateErrors();
+          setToast({
+            isOpen: true,
+            message: 'Error flagged successfully!',
+            type: 'success'
+          });
+        },
+        onError: (error: any) => {
+          console.error('handleFlagError: Error callback called:', error);
+          const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+          alert(`Failed to flag error: ${errorMessage}`);
+          setIsSavingError(false);
+        }
+      });
+    } catch (error: any) {
+      console.error('handleFlagError: Exception caught:', error);
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      alert(`Failed to flag error: ${errorMessage}`);
+      setIsSavingError(false);
+    }
+  };
+
+  // Handle error type change (for flagging form)
+  const handleErrorTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setErrorTypeInput(value);
+    // Check if the input matches a predefined type
+    const matchedType = predefinedErrorTypes.find(t => 
+      t.label.toLowerCase() === value.toLowerCase() || 
+      t.value.toLowerCase() === value.toLowerCase()
+    );
+    if (matchedType) {
+      setErrorType(matchedType.value);
+    } else {
+      // If no match, set errorType to the normalized input value
+      setErrorType(value.trim().toLowerCase().replace(/\s/g, '_'));
+    }
+    setShowErrorTypeDropdown(true);
+  };
+
+  const handleAddCustomErrorType = () => {
+    if (errorTypeInput.trim()) {
+      const newErrorType = errorTypeInput.trim().toLowerCase().replace(/\s/g, '_');
+      setErrorType(newErrorType);
+      setShowErrorTypeDropdown(false);
+    }
+  };
+
+  // Handle editing error type change
+  const handleEditingErrorTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEditingErrorTypeInput(value);
+    // Check if the input matches a predefined type
+    const matchedType = predefinedErrorTypes.find(t => 
+      t.label.toLowerCase() === value.toLowerCase() || 
+      t.value.toLowerCase() === value.toLowerCase()
+    );
+    if (matchedType) {
+      setEditingErrorType(matchedType.value);
+    } else {
+      // If no match, set editingErrorType to the normalized input value
+      setEditingErrorType(value.trim().toLowerCase().replace(/\s/g, '_'));
+    }
+    setShowEditingErrorTypeDropdown(true);
+  };
+
+  const handleAddCustomEditingErrorType = () => {
+    if (editingErrorTypeInput.trim()) {
+      const newErrorType = editingErrorTypeInput.trim().toLowerCase().replace(/\s/g, '_');
+      setEditingErrorType(newErrorType);
+      setShowEditingErrorTypeDropdown(false);
+    }
+  };
+
+  // Handle edit error
+  const handleEditError = (error: any) => {
+    setEditingErrorId(error.id);
+    setEditingErrorType(error.error_type);
+    // Find the label for the error_type to display in the input
+    const foundType = predefinedErrorTypes.find(t => t.value === error.error_type);
+    setEditingErrorTypeInput(foundType ? foundType.label : error.error_type);
+    setEditingErrorSeverity(error.severity);
+    setEditingErrorTitle(error.title);
+    setEditingErrorDescription(error.description || '');
+    setEditingErrorClientAppId(error.client_app_id || '');
+  };
+
+  const handleCancelErrorEdit = () => {
+    setEditingErrorId(null);
+    setEditingErrorType('');
+    setEditingErrorTypeInput('');
+    setEditingErrorSeverity('warning');
+    setEditingErrorTitle('');
+    setEditingErrorDescription('');
+    setEditingErrorClientAppId('');
+  };
+
+  const handleSaveErrorEdit = async () => {
+    if (!editingErrorId || !editingErrorType || !editingErrorTitle.trim()) {
+      alert('Please fill in Error Type and Title');
+      return;
+    }
+    
+    setIsSavingErrorEdit(true);
+    try {
+      const errorData: any = {
+        error_type: editingErrorType,
+        severity: editingErrorSeverity,
+        title: editingErrorTitle.trim(),
+        description: editingErrorDescription.trim() || null,
+        client_app_id: editingErrorClientAppId || null
+      };
+      
+      await updateClientError(editingErrorId, errorData, {
+        onSuccess: () => {
+          handleCancelErrorEdit();
+          setIsSavingErrorEdit(false);
+          mutateErrors();
+          setToast({
+            isOpen: true,
+            message: 'Error updated successfully!',
+            type: 'success'
+          });
+        },
+        onError: (error: any) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+          alert(`Failed to update error: ${errorMessage}`);
+          setIsSavingErrorEdit(false);
+        }
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      alert(`Failed to update error: ${errorMessage}`);
+      setIsSavingErrorEdit(false);
+    }
+  };
+
+  const handleResolveError = async (errorId: string, resolved: boolean) => {
+    try {
+      await resolveClientError(errorId, resolved, {
+        onSuccess: () => {
+          mutateErrors();
+          setToast({
+            isOpen: true,
+            message: resolved ? 'Error resolved successfully!' : 'Error reopened successfully!',
+            type: 'success'
+          });
+        },
+        onError: (error: any) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+          alert(`Failed to ${resolved ? 'resolve' : 'reopen'} error: ${errorMessage}`);
+        }
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      alert(`Failed to ${resolved ? 'resolve' : 'reopen'} error: ${errorMessage}`);
+    }
+  };
+
+  const handleClearError = async (errorId: string, cleared: boolean) => {
+    try {
+      await clearClientError(errorId, cleared, {
+        onSuccess: () => {
+          mutateErrors();
+          setToast({
+            isOpen: true,
+            message: cleared ? 'Error cleared successfully!' : 'Error uncleared successfully!',
+            type: 'success'
+          });
+        },
+        onError: (error: any) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+          setToast({
+            isOpen: true,
+            message: `Failed to ${cleared ? 'clear' : 'unclear'} error: ${errorMessage}`,
+            type: 'error'
+          });
+        }
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      setToast({
+        isOpen: true,
+        message: `Failed to ${cleared ? 'clear' : 'unclear'} error: ${errorMessage}`,
+        type: 'error'
+      });
+    }
+  };
+
+  const handleDeleteError = async (errorId: string) => {
+    if (!confirm('Are you sure you want to delete this error? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await deleteClientError(errorId, {
+        onSuccess: () => {
+          mutateErrors();
+          setToast({
+            isOpen: true,
+            message: 'Error deleted successfully!',
+            type: 'success'
+          });
+        },
+        onError: (error: any) => {
+          const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+          alert(`Failed to delete error: ${errorMessage}`);
+        }
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      alert(`Failed to delete error: ${errorMessage}`);
+    }
+  };
+
+  const handleClearAllErrorsClick = () => {
+    setClearAllModal({ isOpen: true });
+  };
+
+  const clearAllErrors = async () => {
+    if (!clientId) return;
+    
+    setClearAllModal({ isOpen: false });
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setToast({
+        isOpen: true,
+        message: 'Supabase client not initialized',
+        type: 'error'
+      });
+      return;
+    }
+    
+    try {
+      // Get all unresolved, uncleared errors for this client
+      const { data: errorsToClear, error: fetchError } = await (supabase as any)
+        .from('client_errors')
+        .select('id')
+        .eq('client_id', clientId)
+        .is('resolved_at', null)
+        .is('cleared_at', null);
+      
+      if (fetchError) {
+        throw fetchError;
+      }
+      
+      if (!errorsToClear || errorsToClear.length === 0) {
+        setToast({
+          isOpen: true,
+          message: 'No errors to clear.',
+          type: 'info'
+        });
+        return;
+      }
+      
+      // Update all errors to set cleared_at
+      const { error: updateError } = await (supabase as any)
+        .from('client_errors')
+        .update({ cleared_at: new Date().toISOString() })
+        .in('id', errorsToClear.map((e: any) => e.id));
+      
+      if (updateError) {
+        throw updateError;
+      }
+      
+      mutateErrors();
+      setToast({
+        isOpen: true,
+        message: `Successfully cleared ${errorsToClear.length} error(s). They will not reappear when "Detect Errors" is run.`,
+        type: 'success'
+      });
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+      setToast({
+        isOpen: true,
+        message: `Failed to clear errors: ${errorMessage}`,
+        type: 'error'
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div>
@@ -1302,6 +1872,37 @@ export default function ClientDetailPage() {
         actions={
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const newValue = !showErrorForm;
+                console.log('Flag Error button clicked, setting showErrorForm to:', newValue);
+                setShowErrorForm(newValue);
+                // Scroll to form after state update
+                if (newValue) {
+                  setTimeout(() => {
+                    const formElement = document.getElementById('flag-error-form');
+                    if (formElement) {
+                      formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }, 100);
+                }
+              }}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: showErrorForm ? '#10b981' : '#f59e0b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '500'
+              }}
+            >
+              {showErrorForm ? '✕ Close Form' : '🚩 Flag Error'}
+            </button>
+            <button
               onClick={() => {
                 setDeleteModal({
                   isOpen: true,
@@ -1329,6 +1930,446 @@ export default function ClientDetailPage() {
           </div>
         }
       />
+
+      {/* Client Errors Section - Prominently displayed at the top */}
+      {Array.isArray(clientErrors) && clientErrors.length > 0 && (() => {
+        const activeErrors = clientErrors.filter((e: any) => !e.resolved_at && !e.cleared_at);
+        return activeErrors.length > 0 ? (
+          <section style={{ 
+            marginTop: '1.5rem', 
+            marginBottom: '2rem',
+            backgroundColor: '#fef2f2',
+            padding: '1.5rem',
+            borderRadius: '8px',
+            border: '2px solid #ef4444',
+            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.75rem', fontWeight: '700', margin: 0, color: '#991b1b' }}>
+                ⚠️ Errors & Issues ({activeErrors.length} Active)
+              </h2>
+              <button
+                onClick={handleClearAllErrorsClick}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#64748b',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  transition: 'background-color 0.2s, transform 0.1s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#475569';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#64748b';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                🗑️ Clear All
+              </button>
+            </div>
+          
+          {errorsLoading ? (
+            <LoadingSpinner message="Loading errors..." />
+          ) : errorsError ? (
+            <ErrorMessage error={errorsError} onRetry={mutateErrors} />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {activeErrors.map((error: any) => {
+                const severityColor = error.severity === 'critical' ? '#ef4444' : 
+                                     error.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+                const appName = error.client_apps?.apps?.name || 'N/A';
+                const isEditing = editingErrorId === error.id;
+
+                return (
+                  <div
+                    key={error.id}
+                    style={{
+                      backgroundColor: '#fff',
+                      padding: '1.5rem',
+                      borderRadius: '8px',
+                      border: `3px solid ${severityColor}`,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                    }}
+                  >
+                    {isEditing ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1.5rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '2px solid #3b82f6' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                          <div>
+                            <label style={{ 
+                              display: 'block', 
+                              marginBottom: '0.75rem', 
+                              fontWeight: '600', 
+                              fontSize: '0.95rem',
+                              color: '#1e293b'
+                            }}>
+                              Error Type <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                              <input
+                                type="text"
+                                value={editingErrorTypeInput}
+                                onChange={handleEditingErrorTypeChange}
+                                onFocus={() => setShowEditingErrorTypeDropdown(true)}
+                                onBlur={() => setTimeout(() => setShowEditingErrorTypeDropdown(false), 100)}
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '0.75rem', 
+                                  border: editingErrorType ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                                  borderRadius: '8px',
+                                  fontSize: '0.95rem',
+                                  backgroundColor: '#fff',
+                                  transition: 'border-color 0.2s',
+                                  outline: 'none'
+                                }}
+                                disabled={isSavingErrorEdit}
+                                placeholder="Select or type error type"
+                              />
+                              {showEditingErrorTypeDropdown && (filteredEditingErrorTypes.length > 0 || editingErrorTypeInput.trim()) && (
+                                <ul style={{
+                                  position: 'absolute',
+                                  top: '100%',
+                                  left: 0,
+                                  right: 0,
+                                  backgroundColor: '#fff',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '8px',
+                                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                  zIndex: 20,
+                                  maxHeight: '200px',
+                                  overflowY: 'auto',
+                                  listStyle: 'none',
+                                  padding: 0,
+                                  margin: '0.5rem 0 0 0'
+                                }}>
+                                  {filteredEditingErrorTypes.map((type) => (
+                                    <li
+                                      key={type.value}
+                                      onMouseDown={() => {
+                                        setEditingErrorType(type.value);
+                                        setEditingErrorTypeInput(type.label);
+                                        setShowEditingErrorTypeDropdown(false);
+                                      }}
+                                      style={{
+                                        padding: '0.75rem 1rem',
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem',
+                                        color: '#334155',
+                                        borderBottom: '1px solid #f1f5f9'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0fdf4'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                    >
+                                      {type.label}
+                                    </li>
+                                  ))}
+                                  {editingErrorTypeInput.trim() && (
+                                    <li
+                                      onMouseDown={handleAddCustomEditingErrorType}
+                                      style={{
+                                        padding: '0.75rem 1rem',
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem',
+                                        color: '#3b82f6',
+                                        fontWeight: '600',
+                                        borderTop: filteredEditingErrorTypes.length > 0 ? '1px solid #e2e8f0' : 'none'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                    >
+                                      + Add custom type: "{editingErrorTypeInput}"
+                                    </li>
+                                  )}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <label style={{ 
+                              display: 'block', 
+                              marginBottom: '0.75rem', 
+                              fontWeight: '600', 
+                              fontSize: '0.95rem',
+                              color: '#1e293b'
+                            }}>
+                              Severity <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <select
+                              value={editingErrorSeverity}
+                              onChange={(e) => setEditingErrorSeverity(e.target.value as 'critical' | 'warning' | 'info')}
+                              style={{ 
+                                width: '100%', 
+                                padding: '0.75rem', 
+                                border: '2px solid #cbd5e1', 
+                                borderRadius: '8px',
+                                fontSize: '0.95rem',
+                                backgroundColor: '#fff',
+                                cursor: 'pointer',
+                                transition: 'border-color 0.2s',
+                                outline: 'none'
+                              }}
+                              disabled={isSavingErrorEdit}
+                              onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                              onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                            >
+                              <option value="critical">🔴 Critical</option>
+                              <option value="warning">🟠 Warning</option>
+                              <option value="info">🔵 Info</option>
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Title <span style={{ color: '#ef4444' }}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editingErrorTitle}
+                            onChange={(e) => setEditingErrorTitle(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: editingErrorTitle.trim() ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                              borderRadius: '8px',
+                              fontSize: '0.95rem',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = editingErrorTitle.trim() ? '#10b981' : '#cbd5e1'}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Description
+                          </label>
+                          <textarea
+                            value={editingErrorDescription}
+                            onChange={(e) => setEditingErrorDescription(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: '2px solid #cbd5e1', 
+                              borderRadius: '8px', 
+                              minHeight: '120px',
+                              fontSize: '0.95rem',
+                              fontFamily: 'inherit',
+                              resize: 'vertical',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Related App Process <span style={{ fontWeight: '400', color: '#64748b', fontSize: '0.85rem' }}>(Optional)</span>
+                          </label>
+                          <select
+                            value={editingErrorClientAppId}
+                            onChange={(e) => setEditingErrorClientAppId(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: '2px solid #cbd5e1', 
+                              borderRadius: '8px',
+                              fontSize: '0.95rem',
+                              backgroundColor: '#fff',
+                              cursor: 'pointer',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                          >
+                            <option value="">None (general client error)</option>
+                            {relatedApps.map((app: any) => (
+                              <option key={app.id} value={app.id}>
+                                {app.app?.name ?? 'Unknown'} - {app.status}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1.5rem', borderTop: '2px solid #e2e8f0' }}>
+                          <button
+                            onClick={handleCancelErrorEdit}
+                            disabled={isSavingErrorEdit}
+                            style={{
+                              padding: '0.75rem 1.5rem',
+                              backgroundColor: '#e2e8f0',
+                              color: '#475569',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: isSavingErrorEdit ? 'not-allowed' : 'pointer',
+                              fontSize: '0.95rem',
+                              fontWeight: '600',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => !isSavingErrorEdit && (e.currentTarget.style.backgroundColor = '#cbd5e1')}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveErrorEdit}
+                            disabled={isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()}
+                            style={{
+                              padding: '0.75rem 1.5rem',
+                              backgroundColor: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? '#cbd5e1' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? 'not-allowed' : 'pointer',
+                              fontSize: '0.95rem',
+                              fontWeight: '600',
+                              transition: 'background-color 0.2s, transform 0.1s',
+                              boxShadow: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.3)'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSavingErrorEdit && editingErrorType && editingErrorTitle.trim()) {
+                                e.currentTarget.style.backgroundColor = '#059669';
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? '#cbd5e1' : '#10b981';
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            {isSavingErrorEdit ? '⏳ Saving...' : '💾 Save Changes'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                              <div
+                                style={{
+                                  width: '16px',
+                                  height: '16px',
+                                  borderRadius: '50%',
+                                  backgroundColor: severityColor,
+                                  flexShrink: 0
+                                }}
+                              />
+                              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '700' }}>
+                                {error.title}
+                              </h3>
+                            </div>
+                            <div style={{ fontSize: '1rem', color: '#64748b', marginLeft: '2rem', marginBottom: '0.5rem' }}>
+                              {error.description || 'No description provided'}
+                            </div>
+                            <div style={{ fontSize: '0.9rem', color: '#94a3b8', marginLeft: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                              <span>
+                                <strong>Type:</strong> {error.error_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                              </span>
+                              <span>
+                                <strong>Severity:</strong> {error.severity.toUpperCase()}
+                              </span>
+                              <span>
+                                <strong>App:</strong> {appName}
+                              </span>
+                              <span>
+                                <strong>Detected:</strong> {new Date(error.detected_at).toLocaleString('it-IT')}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                            <button
+                              onClick={() => handleResolveError(error.id, true)}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '600'
+                              }}
+                            >
+                              ✓ Resolve
+                            </button>
+                            <button
+                              onClick={() => handleEditError(error)}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '600'
+                              }}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteError(error.id)}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '600'
+                              }}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        ) : null;
+      })()}
+
       <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
         <div className="detail-section" style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1353,108 +2394,239 @@ export default function ClientDetailPage() {
           </div>
           
           {isEditingClientInfo ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Name *</label>
-                <input
-                  type="text"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                  required
-                />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1.5rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '2px solid #3b82f6' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: clientName.trim() ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    required
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = clientName.trim() ? '#10b981' : '#cbd5e1'}
+                  />
+                </div>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Surname
+                  </label>
+                  <input
+                    type="text"
+                    value={clientSurname}
+                    onChange={(e) => setClientSurname(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Contact
+                  </label>
+                  <input
+                    type="text"
+                    value={clientContact}
+                    onChange={(e) => setClientContact(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    placeholder="Telegram/WhatsApp/Phone"
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                  />
+                </div>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: clientEmail.trim() && clientEmail.includes('@') ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    placeholder="email@example.com"
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = (clientEmail.trim() && clientEmail.includes('@')) ? '#10b981' : '#cbd5e1'}
+                  />
+                </div>
               </div>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Surname</label>
-                <input
-                  type="text"
-                  value={clientSurname}
-                  onChange={(e) => setClientSurname(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Contact</label>
-                <input
-                  type="text"
-                  value={clientContact}
-                  onChange={(e) => setClientContact(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                  placeholder="Telegram/WhatsApp/Phone"
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Email</label>
-                <input
-                  type="email"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                  placeholder="email@example.com"
-                />
-              </div>
-              <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <label style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.75rem', 
+                  cursor: 'pointer',
+                  padding: '0.75rem',
+                  backgroundColor: clientTrusted ? '#f0fdf4' : '#fff',
+                  border: `2px solid ${clientTrusted ? '#10b981' : '#cbd5e1'}`,
+                  borderRadius: '8px',
+                  transition: 'all 0.2s'
+                }}>
                   <input
                     type="checkbox"
                     checked={clientTrusted}
                     onChange={(e) => setClientTrusted(e.target.checked)}
                     disabled={isSavingClientInfo}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                   />
-                  <span style={{ fontWeight: '500' }}>Trusted Client</span>
+                  <span style={{ fontWeight: '600', fontSize: '0.95rem', color: '#1e293b' }}>✓ Trusted Client</span>
                 </label>
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Tier</label>
-                <select
-                  value={clientTierId}
-                  onChange={(e) => setClientTierId(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                >
-                  <option value="">None</option>
-                  {Array.isArray(tiers) && tiers.map((tier: any) => (
-                    <option key={tier.id} value={tier.id}>{tier.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Invited By</label>
-                <select
-                  value={clientInvitedBy}
-                  onChange={(e) => setClientInvitedBy(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  disabled={isSavingClientInfo}
-                >
-                  <option value="">None</option>
-                  {Array.isArray(allClients) && allClients
-                    .filter((c: any) => c.id !== clientId)
-                    .map((c: any) => (
-                      <option key={c.id} value={c.id}>
-                        {`${c.name} ${c.surname ?? ''}`.trim()}
-                      </option>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Tier
+                  </label>
+                  <select
+                    value={clientTierId}
+                    onChange={(e) => setClientTierId(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                  >
+                    <option value="">None</option>
+                    {Array.isArray(tiers) && tiers.map((tier: any) => (
+                      <option key={tier.id} value={tier.id}>{tier.name}</option>
                     ))}
-                </select>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '0.75rem', 
+                    fontWeight: '600', 
+                    fontSize: '0.95rem',
+                    color: '#1e293b'
+                  }}>
+                    Invited By
+                  </label>
+                  <select
+                    value={clientInvitedBy}
+                    onChange={(e) => setClientInvitedBy(e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: '2px solid #cbd5e1', 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s',
+                      outline: 'none'
+                    }}
+                    disabled={isSavingClientInfo}
+                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                  >
+                    <option value="">None</option>
+                    {Array.isArray(allClients) && allClients
+                      .filter((c: any) => c.id !== clientId)
+                      .map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {`${c.name} ${c.surname ?? ''}`.trim()}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1.5rem', borderTop: '2px solid #e2e8f0' }}>
                 <button
                   onClick={handleCancelClientInfoEdit}
                   disabled={isSavingClientInfo}
                   style={{
-                    padding: '0.5rem 1rem',
+                    padding: '0.75rem 1.5rem',
                     backgroundColor: '#e2e8f0',
                     color: '#475569',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     cursor: isSavingClientInfo ? 'not-allowed' : 'pointer',
-                    fontSize: '0.9rem',
-                    fontWeight: '500',
-                    opacity: isSavingClientInfo ? 0.6 : 1
+                    fontSize: '0.95rem',
+                    fontWeight: '600',
+                    transition: 'background-color 0.2s'
                   }}
+                  onMouseEnter={(e) => !isSavingClientInfo && (e.currentTarget.style.backgroundColor = '#cbd5e1')}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
                 >
                   Cancel
                 </button>
@@ -1462,18 +2634,29 @@ export default function ClientDetailPage() {
                   onClick={handleSaveClientInfo}
                   disabled={isSavingClientInfo || !clientName.trim()}
                   style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#10b981',
+                    padding: '0.75rem 1.5rem',
+                    backgroundColor: (isSavingClientInfo || !clientName.trim()) ? '#cbd5e1' : '#10b981',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     cursor: (isSavingClientInfo || !clientName.trim()) ? 'not-allowed' : 'pointer',
-                    fontSize: '0.9rem',
-                    fontWeight: '500',
-                    opacity: (isSavingClientInfo || !clientName.trim()) ? 0.6 : 1
+                    fontSize: '0.95rem',
+                    fontWeight: '600',
+                    transition: 'background-color 0.2s, transform 0.1s',
+                    boxShadow: (isSavingClientInfo || !clientName.trim()) ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.3)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSavingClientInfo && clientName.trim()) {
+                      e.currentTarget.style.backgroundColor = '#059669';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = (isSavingClientInfo || !clientName.trim()) ? '#cbd5e1' : '#10b981';
+                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  {isSavingClientInfo ? 'Saving...' : 'Save'}
+                  {isSavingClientInfo ? '⏳ Saving...' : '💾 Save'}
                 </button>
               </div>
             </div>
@@ -1682,42 +2865,325 @@ export default function ClientDetailPage() {
         </div>
         
         {showStartAppForm && (
-          <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Start New App Process</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ 
+            backgroundColor: '#fff', 
+            padding: '2rem', 
+            borderRadius: '12px', 
+            marginBottom: '1.5rem', 
+            border: '2px solid #e2e8f0',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '2px solid #e2e8f0' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>App *</label>
-                <select
-                  value={startAppAppId}
+                <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '600', color: '#1e293b', marginBottom: '0.25rem' }}>Start New App Process</h3>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>Create a new app signup for this client</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowStartAppForm(false);
+                  setStartAppAppId('');
+                  setStartAppAppSearch('');
+                  setShowStartAppDropdown(false);
+                  setStartAppPromotionId('');
+                  setStartAppReferralLinkId('');
+                  setStartAppCustomReferralLink('');
+                  setStartAppNotes('');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#64748b',
+                  padding: '0.25rem 0.5rem',
+                  lineHeight: 1,
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f1f5f9';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* App Selection */}
+              <div style={{ 
+                padding: '1.5rem', 
+                backgroundColor: startAppAppId ? '#f0fdf4' : '#f8fafc', 
+                borderRadius: '10px',
+                border: `2px solid ${startAppAppId ? '#10b981' : '#e2e8f0'}`,
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem' }}>📱</span>
+                  <label style={{ 
+                    display: 'block', 
+                    fontWeight: '600',
+                    fontSize: '1rem',
+                    color: '#334155',
+                    flex: 1
+                  }}>
+                    App <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  {startAppAppId && (
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      backgroundColor: '#10b981',
+                      color: 'white'
+                    }}>
+                      ✓ Selected
+                    </span>
+                  )}
+                </div>
+                {!startAppAppId && (
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                    Choose the app you want to start for this client
+                  </p>
+                )}
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <input
+                    ref={startAppInputRef}
+                    type="text"
+                    value={startAppAppSearch}
                   onChange={(e) => {
-                    setStartAppAppId(e.target.value);
-                    setStartAppPromotionId(''); // Reset promotion when app changes
-                    setStartAppReferralLinkId(''); // Reset referral link when app changes
-                  }}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                      setStartAppAppSearch(e.target.value);
+                      setShowStartAppDropdown(true);
+                    }}
+                    onFocus={() => setShowStartAppDropdown(true)}
+                    placeholder="Search app..."
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.875rem', 
+                      border: `2px solid ${startAppAppId ? '#10b981' : '#cbd5e1'}`, 
+                      borderRadius: '8px',
+                      fontSize: '0.95rem',
+                      backgroundColor: '#fff',
+                      cursor: isSavingStartApp ? 'not-allowed' : 'text',
+                      transition: 'border-color 0.2s',
+                      fontWeight: startAppAppId ? '500' : '400',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    disabled={isSavingStartApp}
+                    onBlur={(e) => {
+                      setTimeout(() => setShowStartAppDropdown(false), 200);
+                    }}
+                  />
+                  {startAppAppId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartAppAppId('');
+                        setStartAppAppSearch('');
+                        setStartAppPromotionId('');
+                        setStartAppReferralLinkId('');
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '0.75rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '1.2rem',
+                        color: '#64748b',
+                        padding: '0.25rem',
+                        lineHeight: 1
+                      }}
                   disabled={isSavingStartApp}
                 >
-                  <option value="">Select an app</option>
-                  {Array.isArray(allApps) && allApps
-                    .filter((app: any) => {
-                      // Only show apps that don't have an existing client_app for this client
+                      ×
+                    </button>
+                  )}
+                  {showStartAppDropdown && (() => {
+                    const availableApps = Array.isArray(allApps) ? allApps.filter((app: any) => {
                       return !clientApps.some((ca: any) => ca.app_id === app.id && ca.client_id === clientId);
-                    })
-                    .map((app: any) => (
-                      <option key={app.id} value={app.id}>{app.name}</option>
-                    ))}
-                </select>
+                    }) : [];
+                    
+                    const filteredApps = !startAppAppSearch.trim() 
+                      ? availableApps 
+                      : availableApps.filter((app: any) => 
+                          app.name.toLowerCase().includes(startAppAppSearch.toLowerCase().trim())
+                        );
+                    
+                    return filteredApps.length > 0 ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: '#fff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          maxHeight: '250px',
+                          overflowY: 'auto',
+                          zIndex: 1000,
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                          marginTop: '0.25rem'
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        {filteredApps.map((app: any) => {
+                          const isSelected = startAppAppId === app.id;
+                          return (
+                            <div
+                              key={app.id}
+                              onClick={() => {
+                                setStartAppAppId(app.id);
+                                setStartAppAppSearch(app.name);
+                                setShowStartAppDropdown(false);
+                                // Don't reset promotion - useEffect will auto-select if needed
+                                setStartAppReferralLinkId('');
+                              }}
+                              style={{
+                                padding: '0.875rem',
+                                cursor: 'pointer',
+                                backgroundColor: isSelected ? '#eff6ff' : '#fff',
+                                borderBottom: '1px solid #f1f5f9',
+                                transition: 'background-color 0.15s'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = '#f8fafc';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  e.currentTarget.style.backgroundColor = '#fff';
+                                }
+                              }}
+                            >
+                              <div style={{ fontWeight: isSelected ? '600' : '400', fontSize: '0.95rem' }}>
+                                {app.name}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : showStartAppDropdown && startAppAppSearch.trim() && filteredApps.length === 0 ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: '#fff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          padding: '0.875rem',
+                          zIndex: 1000,
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                          marginTop: '0.25rem',
+                          fontSize: '0.95rem',
+                          color: '#64748b'
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        No apps found
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                {Array.isArray(allApps) && allApps.filter((app: any) => !clientApps.some((ca: any) => ca.app_id === app.id && ca.client_id === clientId)).length === 0 && (
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.85rem', color: '#f59e0b', fontStyle: 'italic' }}>
+                    ⚠️ All available apps have already been started for this client
+                  </p>
+                )}
               </div>
               
               {startAppAppId && (
                 <>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Promotion (Optional)</label>
+                  {/* Promotion Selection */}
+                  <div style={{ 
+                    padding: '1.5rem', 
+                    backgroundColor: startAppPromotionId ? '#fef3c7' : '#f8fafc', 
+                    borderRadius: '10px',
+                    border: `2px solid ${startAppPromotionId ? '#f59e0b' : '#e2e8f0'}`,
+                    transition: 'all 0.2s'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                      <span style={{ fontSize: '1.25rem' }}>🎁</span>
+                      <label style={{ 
+                        display: 'block', 
+                        fontWeight: '600',
+                        fontSize: '1rem',
+                        color: '#334155',
+                        flex: 1
+                      }}>
+                        Promotion <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span>
+                      </label>
+                      {startAppPromotionId && (
+                        <span style={{
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          backgroundColor: '#f59e0b',
+                          color: 'white'
+                        }}>
+                          ✓ Selected
+                        </span>
+                      )}
+                    </div>
+                    {!startAppPromotionId && (
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                        Select a promotion to automatically set rewards (optional)
+                      </p>
+                    )}
+                    {startAppPromotionId && (() => {
+                      const selectedPromo = Array.isArray(allPromotions) ? allPromotions.find((p: any) => p.id === startAppPromotionId) : null;
+                      return selectedPromo ? (
+                        <div style={{ 
+                          marginBottom: '0.75rem', 
+                          padding: '0.75rem', 
+                          backgroundColor: '#fff', 
+                          borderRadius: '6px',
+                          border: '1px solid #fde68a'
+                        }}>
+                          <div style={{ fontSize: '0.875rem', fontWeight: '600', color: '#92400e', marginBottom: '0.25rem' }}>
+                            {selectedPromo.name}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', gap: '1rem' }}>
+                            <span>Client: <strong style={{ color: '#059669' }}>€{Number(selectedPromo.client_reward || 0).toFixed(2)}</strong></span>
+                            <span>Us: <strong style={{ color: '#3b82f6' }}>€{Number(selectedPromo.our_reward || 0).toFixed(2)}</strong></span>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
                     <select
                       value={startAppPromotionId}
                       onChange={(e) => setStartAppPromotionId(e.target.value)}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.875rem', 
+                        border: `2px solid ${startAppPromotionId ? '#f59e0b' : '#cbd5e1'}`, 
+                        borderRadius: '8px',
+                        fontSize: '0.95rem',
+                        backgroundColor: '#fff',
+                        cursor: isSavingStartApp ? 'not-allowed' : 'pointer',
+                        transition: 'border-color 0.2s',
+                        fontWeight: startAppPromotionId ? '500' : '400'
+                      }}
                       disabled={isSavingStartApp}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = '#3b82f6';
+                        e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = startAppPromotionId ? '#f59e0b' : '#cbd5e1';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
                     >
                       <option value="">No promotion</option>
                       {Array.isArray(allPromotions) && allPromotions
@@ -1745,10 +3211,50 @@ export default function ClientDetailPage() {
                           </option>
                         ))}
                     </select>
+                    {Array.isArray(allPromotions) && allPromotions.filter((p: any) => p.app_id === startAppAppId).length === 0 && (
+                      <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.85rem', color: '#64748b', fontStyle: 'italic' }}>
+                        ℹ️ No active promotions available for this app
+                      </p>
+                    )}
                   </div>
                   
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Referral Link (Optional)</label>
+                  {/* Referral Link Selection */}
+                  <div style={{ 
+                    padding: '1.5rem', 
+                    backgroundColor: (startAppReferralLinkId || startAppCustomReferralLink) ? '#eff6ff' : '#f8fafc', 
+                    borderRadius: '10px',
+                    border: `2px solid ${(startAppReferralLinkId || startAppCustomReferralLink) ? '#3b82f6' : '#e2e8f0'}`,
+                    transition: 'all 0.2s'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                      <span style={{ fontSize: '1.25rem' }}>🔗</span>
+                      <label style={{ 
+                        display: 'block', 
+                        fontWeight: '600',
+                        fontSize: '1rem',
+                        color: '#334155',
+                        flex: 1
+                      }}>
+                        Referral Link <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span>
+                      </label>
+                      {(startAppReferralLinkId || startAppCustomReferralLink) && (
+                        <span style={{
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          backgroundColor: '#3b82f6',
+                          color: 'white'
+                        }}>
+                          ✓ Set
+                        </span>
+                      )}
+                    </div>
+                    {!startAppReferralLinkId && !startAppCustomReferralLink && (
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                        Choose a referral link from the list or enter a custom one
+                      </p>
+                    )}
                     <select
                       value={startAppReferralLinkId}
                       onChange={(e) => {
@@ -1758,22 +3264,91 @@ export default function ClientDetailPage() {
                           setStartAppCustomReferralLink('');
                         }
                       }}
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', marginBottom: '0.5rem' }}
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.875rem', 
+                        border: `2px solid ${startAppReferralLinkId ? '#3b82f6' : '#cbd5e1'}`, 
+                        borderRadius: '8px',
+                        fontSize: '0.95rem',
+                        backgroundColor: '#fff',
+                        cursor: isSavingStartApp ? 'not-allowed' : 'pointer',
+                        marginBottom: '0.75rem',
+                        transition: 'border-color 0.2s',
+                        fontWeight: startAppReferralLinkId ? '500' : '400'
+                      }}
                       disabled={isSavingStartApp}
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = '#3b82f6';
+                        e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = startAppReferralLinkId ? '#3b82f6' : '#cbd5e1';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
                     >
                       <option value="">No referral link</option>
                       {Array.isArray(referralLinks) && referralLinks
                         .filter((link: any) => {
-                          // Only show active referral links for the selected app
-                          return link.app_id === startAppAppId && link.is_active;
+                          // Only show active referral links for the selected app with remaining uses
+                          if (link.app_id !== startAppAppId || !link.is_active) return false;
+                          // Filter out links with 0 remaining uses
+                          if (link.max_uses !== null) {
+                            const remaining = link.max_uses - (link.current_uses || 0);
+                            if (remaining <= 0) return false;
+                          }
+                          return true;
                         })
-                        .map((link: any) => (
+                        .map((link: any) => {
+                          const accountName = link.account_name || '';
+                          const code = link.code || '';
+                          const url = link.normalized_url || link.url || '';
+                          const remaining = link.max_uses ? `${link.max_uses - link.current_uses} remaining` : 'unlimited';
+                          
+                          let displayText = '';
+                          if (accountName) {
+                            displayText = code 
+                              ? `${accountName} - ${code} - ${url} (${remaining})`
+                              : `${accountName} - ${url} (${remaining})`;
+                          } else {
+                            displayText = code 
+                              ? `${code} - ${url} (${remaining})`
+                              : `${url} (${remaining})`;
+                          }
+                          
+                          return (
                           <option key={link.id} value={link.id}>
-                            {link.url} {link.max_uses ? `(${link.max_uses - link.current_uses} remaining)` : '(unlimited)'}
+                              {displayText}
                           </option>
-                        ))}
+                          );
+                        })}
                     </select>
-                    <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.5rem', textAlign: 'center' }}>OR</div>
+                    {Array.isArray(referralLinks) && referralLinks.filter((link: any) => link.app_id === startAppAppId && link.is_active).length === 0 && (
+                      <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b', fontStyle: 'italic' }}>
+                        ℹ️ No active referral links available for this app
+                      </p>
+                    )}
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.75rem', 
+                      margin: '0.75rem 0',
+                      fontSize: '0.85rem', 
+                      color: '#64748b'
+                    }}>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }}></div>
+                      <span style={{ fontWeight: '600', padding: '0 0.5rem' }}>OR</span>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }}></div>
+                    </div>
+                    <div>
+                      <label style={{ 
+                        display: 'block', 
+                        marginBottom: '0.5rem', 
+                        fontSize: '0.85rem',
+                        fontWeight: '500',
+                        color: '#64748b'
+                      }}>
+                        Enter custom referral link or code
+                      </label>
                     <input
                       type="text"
                       value={startAppCustomReferralLink}
@@ -1784,30 +3359,106 @@ export default function ClientDetailPage() {
                           setStartAppReferralLinkId('');
                         }
                       }}
-                      placeholder="Enter custom referral link or code"
-                      style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                        placeholder="e.g., https://invite.kraken.com/JDNW/abc123 or abc123"
+                        style={{ 
+                          width: '100%', 
+                          padding: '0.875rem', 
+                          border: `2px solid ${startAppCustomReferralLink ? '#3b82f6' : '#cbd5e1'}`, 
+                          borderRadius: '8px',
+                          fontSize: '0.95rem',
+                          backgroundColor: '#fff',
+                          transition: 'border-color 0.2s',
+                          fontWeight: startAppCustomReferralLink ? '500' : '400'
+                        }}
                       disabled={isSavingStartApp}
-                    />
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = '#3b82f6';
+                          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = startAppCustomReferralLink ? '#3b82f6' : '#cbd5e1';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      />
+                    </div>
                   </div>
                 </>
               )}
               
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Initial Notes (Optional)</label>
+              {/* Initial Notes */}
+              <div style={{ 
+                padding: '1.5rem', 
+                backgroundColor: startAppNotes ? '#fef3c7' : '#f8fafc', 
+                borderRadius: '10px',
+                border: `2px solid ${startAppNotes ? '#f59e0b' : '#e2e8f0'}`,
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem' }}>📝</span>
+                  <label style={{ 
+                    display: 'block', 
+                    fontWeight: '600',
+                    fontSize: '1rem',
+                    color: '#334155',
+                    flex: 1
+                  }}>
+                    Initial Notes <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span>
+                  </label>
+                  {startAppNotes && (
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      backgroundColor: '#f59e0b',
+                      color: 'white'
+                    }}>
+                      {startAppNotes.length} chars
+                    </span>
+                  )}
+                </div>
+                {!startAppNotes && (
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#64748b' }}>
+                    Add any relevant notes about this app signup (e.g., special instructions, client preferences)
+                  </p>
+                )}
                 <textarea
                   value={startAppNotes}
                   onChange={(e) => setStartAppNotes(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', minHeight: '60px' }}
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.875rem', 
+                    border: `2px solid ${startAppNotes ? '#f59e0b' : '#cbd5e1'}`, 
+                    borderRadius: '8px', 
+                    minHeight: '100px',
+                    fontSize: '0.95rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                    backgroundColor: '#fff',
+                    transition: 'border-color 0.2s',
+                    lineHeight: '1.5'
+                  }}
                   disabled={isSavingStartApp}
                   placeholder="Add any initial notes for this app process..."
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = startAppNotes ? '#f59e0b' : '#cbd5e1';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 />
               </div>
               
-              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                 <button
                   onClick={() => {
                     setShowStartAppForm(false);
                     setStartAppAppId('');
+                    setStartAppAppSearch('');
+                    setShowStartAppDropdown(false);
                     setStartAppPromotionId('');
                     setStartAppReferralLinkId('');
                     setStartAppCustomReferralLink('');
@@ -1815,14 +3466,23 @@ export default function ClientDetailPage() {
                   }}
                   disabled={isSavingStartApp}
                   style={{
-                    padding: '0.5rem 1rem',
+                    padding: '0.75rem 1.5rem',
                     backgroundColor: '#e2e8f0',
                     color: '#475569',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     cursor: isSavingStartApp ? 'not-allowed' : 'pointer',
-                    fontSize: '0.9rem',
-                    fontWeight: '500'
+                    fontSize: '0.95rem',
+                    fontWeight: '500',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSavingStartApp) {
+                      e.currentTarget.style.backgroundColor = '#cbd5e1';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#e2e8f0';
                   }}
                 >
                   Cancel
@@ -1882,18 +3542,31 @@ export default function ClientDetailPage() {
                   }}
                   disabled={isSavingStartApp || !startAppAppId}
                   style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#10b981',
+                    padding: '0.75rem 1.5rem',
+                    backgroundColor: (isSavingStartApp || !startAppAppId) ? '#94a3b8' : '#10b981',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     cursor: (isSavingStartApp || !startAppAppId) ? 'not-allowed' : 'pointer',
-                    fontSize: '0.9rem',
-                    fontWeight: '500',
-                    opacity: (isSavingStartApp || !startAppAppId) ? 0.6 : 1
+                    fontSize: '0.95rem',
+                    fontWeight: '600',
+                    transition: 'background-color 0.2s, transform 0.1s',
+                    boxShadow: (isSavingStartApp || !startAppAppId) ? 'none' : '0 2px 4px rgba(16, 185, 129, 0.2)'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSavingStartApp && startAppAppId) {
+                      e.currentTarget.style.backgroundColor = '#059669';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSavingStartApp && startAppAppId) {
+                      e.currentTarget.style.backgroundColor = '#10b981';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }
                   }}
                 >
-                  {isSavingStartApp ? 'Starting...' : 'Start Process'}
+                  {isSavingStartApp ? 'Starting...' : 'Start App Process'}
                 </button>
               </div>
             </div>
@@ -2129,7 +3802,11 @@ export default function ClientDetailPage() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
                     {item.promotion?.name && <span><strong>Promotion:</strong> {item.promotion.name}</span>}
-                    {item.link?.url && <span><strong>Referral link:</strong> {item.link.url}</span>}
+                    {item.link && (item.link.account_name || item.link.code || item.link.url) && (
+                      <span>
+                        <strong>Referral link:</strong> {item.link.account_name || item.link.code || item.link.url}
+                      </span>
+                    )}
                     <span><strong>Deposit:</strong> €{Number(
                       item.deposit_amount ?? 
                       (item.promotion?.deposit_required ?? 0)
@@ -2467,7 +4144,14 @@ export default function ClientDetailPage() {
                             {isEditingSteps ? 'Done' : 'Edit Steps'}
                           </button>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '0.5rem', 
+                          maxHeight: '200px', 
+                          overflowY: 'auto',
+                          transition: 'all 0.2s ease-in-out'
+                        }}>
                           {(isEditingSteps ? stepOrder : incompleteSteps).map((step) => {
                             const actualStepIndex = stepOrder.indexOf(step);
                             const isStepCompleted = completedSteps.has(step);
@@ -2483,7 +4167,10 @@ export default function ClientDetailPage() {
                                   borderRadius: '4px',
                                   border: `1px solid ${isStepCompleted ? '#10b981' : '#fecaca'}`,
                                   cursor: 'pointer',
-                                  fontSize: '0.85rem'
+                                  fontSize: '0.85rem',
+                                  minHeight: '3rem',
+                                  transition: 'all 0.2s ease-in-out',
+                                  position: 'relative'
                                 }}
                               >
                                 <input
@@ -3182,6 +4869,897 @@ export default function ClientDetailPage() {
         )}
       </section>
       
+      {/* Flag Error Form */}
+      {showErrorForm ? (
+        <section 
+          id="flag-error-form"
+          style={{ 
+            marginTop: '2rem', 
+            marginBottom: '2rem',
+            backgroundColor: '#fff', 
+            padding: '2rem', 
+            borderRadius: '12px', 
+            border: '3px solid #f59e0b', 
+            boxShadow: '0 8px 24px rgba(245, 158, 11, 0.25)', 
+            zIndex: 10, 
+            position: 'relative'
+          }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', paddingBottom: '1rem', borderBottom: '2px solid #fef3c7' }}>
+            <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '700', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '1.5rem' }}>🚩</span>
+              Flag Error
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                console.log('Closing error form');
+                setShowErrorForm(false);
+              }}
+              style={{
+                padding: '0.5rem 0.75rem',
+                backgroundColor: '#64748b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#475569'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#64748b'}
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            <div>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.75rem', 
+                fontWeight: '600', 
+                fontSize: '0.95rem',
+                color: '#1e293b'
+              }}>
+                Error Type <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={errorTypeInput}
+                  onChange={handleErrorTypeChange}
+                  onFocus={() => setShowErrorTypeDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowErrorTypeDropdown(false), 100)}
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem', 
+                    border: errorType ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                    borderRadius: '8px',
+                    fontSize: '0.95rem',
+                    backgroundColor: '#fff',
+                    transition: 'border-color 0.2s',
+                    outline: 'none'
+                  }}
+                  disabled={isSavingError}
+                  placeholder="Select or type error type"
+                />
+                {showErrorTypeDropdown && (filteredErrorTypes.length > 0 || errorTypeInput.trim()) && (
+                  <ul style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    zIndex: 20,
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    listStyle: 'none',
+                    padding: 0,
+                    margin: '0.5rem 0 0 0'
+                  }}>
+                    {filteredErrorTypes.map((type) => (
+                      <li
+                        key={type.value}
+                        onMouseDown={() => {
+                          setErrorType(type.value);
+                          setErrorTypeInput(type.label);
+                          setShowErrorTypeDropdown(false);
+                        }}
+                        style={{
+                          padding: '0.75rem 1rem',
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          color: '#334155',
+                          borderBottom: '1px solid #f1f5f9'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0fdf4'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                      >
+                        {type.label}
+                      </li>
+                    ))}
+                    {errorTypeInput.trim() && (
+                      <li
+                        onMouseDown={handleAddCustomErrorType}
+                        style={{
+                          padding: '0.75rem 1rem',
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          color: '#3b82f6',
+                          fontWeight: '600',
+                          borderTop: filteredErrorTypes.length > 0 ? '1px solid #e2e8f0' : 'none'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                      >
+                        + Add custom type: "{errorTypeInput}"
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            </div>
+            
+            <div>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.75rem', 
+                fontWeight: '600', 
+                fontSize: '0.95rem',
+                color: '#1e293b'
+              }}>
+                Severity <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <select
+                value={errorSeverity}
+                onChange={(e) => setErrorSeverity(e.target.value as 'critical' | 'warning' | 'info')}
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  border: '2px solid #cbd5e1', 
+                  borderRadius: '8px',
+                  fontSize: '0.95rem',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s',
+                  outline: 'none'
+                }}
+                disabled={isSavingError}
+                onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+              >
+                <option value="critical">🔴 Critical</option>
+                <option value="warning">🟠 Warning</option>
+                <option value="info">🔵 Info</option>
+              </select>
+            </div>
+          </div>
+          
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '0.75rem', 
+              fontWeight: '600', 
+              fontSize: '0.95rem',
+              color: '#1e293b'
+            }}>
+              Title <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={errorTitle}
+              onChange={(e) => setErrorTitle(e.target.value)}
+              style={{ 
+                width: '100%', 
+                padding: '0.75rem', 
+                border: errorTitle.trim() ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                borderRadius: '8px',
+                fontSize: '0.95rem',
+                transition: 'border-color 0.2s',
+                outline: 'none'
+              }}
+              disabled={isSavingError}
+              placeholder="e.g., Client failed to complete deposit"
+              onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.currentTarget.style.borderColor = errorTitle.trim() ? '#10b981' : '#cbd5e1'}
+            />
+          </div>
+          
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '0.75rem', 
+              fontWeight: '600', 
+              fontSize: '0.95rem',
+              color: '#1e293b'
+            }}>
+              Description
+            </label>
+            <textarea
+              value={errorDescription}
+              onChange={(e) => setErrorDescription(e.target.value)}
+              style={{ 
+                width: '100%', 
+                padding: '0.75rem', 
+                border: '2px solid #cbd5e1', 
+                borderRadius: '8px', 
+                minHeight: '120px',
+                fontSize: '0.95rem',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+                transition: 'border-color 0.2s',
+                outline: 'none'
+              }}
+              disabled={isSavingError}
+              placeholder="Add details about the error..."
+              onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+            />
+          </div>
+          
+          <div style={{ marginBottom: '2rem' }}>
+            <label style={{ 
+              display: 'block', 
+              marginBottom: '0.75rem', 
+              fontWeight: '600', 
+              fontSize: '0.95rem',
+              color: '#1e293b'
+            }}>
+              Related App Process <span style={{ fontWeight: '400', color: '#64748b', fontSize: '0.85rem' }}>(Optional)</span>
+            </label>
+            <select
+              value={errorClientAppId}
+              onChange={(e) => setErrorClientAppId(e.target.value)}
+              style={{ 
+                width: '100%', 
+                padding: '0.75rem', 
+                border: '2px solid #cbd5e1', 
+                borderRadius: '8px',
+                fontSize: '0.95rem',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                transition: 'border-color 0.2s',
+                outline: 'none'
+              }}
+              disabled={isSavingError}
+              onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+              onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+            >
+              <option value="">None (general client error)</option>
+              {relatedApps.map((app: any) => (
+                <option key={app.id} value={app.id}>
+                  {app.app?.name ?? 'Unknown'} - {app.status}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1.5rem', borderTop: '2px solid #fef3c7' }}>
+            <button
+              onClick={() => {
+                setShowErrorForm(false);
+                setErrorType('');
+                setErrorTypeInput('');
+                setErrorSeverity('warning');
+                setErrorTitle('');
+                setErrorDescription('');
+                setErrorClientAppId('');
+              }}
+              disabled={isSavingError}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#e2e8f0',
+                color: '#475569',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: isSavingError ? 'not-allowed' : 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: '600',
+                transition: 'background-color 0.2s'
+              }}
+              onMouseEnter={(e) => !isSavingError && (e.currentTarget.style.backgroundColor = '#cbd5e1')}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleFlagError}
+              disabled={isSavingError || !errorType || !errorTitle.trim()}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: (isSavingError || !errorType || !errorTitle.trim()) ? '#cbd5e1' : '#f59e0b',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: (isSavingError || !errorType || !errorTitle.trim()) ? 'not-allowed' : 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: '600',
+                transition: 'background-color 0.2s, transform 0.1s',
+                boxShadow: (isSavingError || !errorType || !errorTitle.trim()) ? 'none' : '0 4px 12px rgba(245, 158, 11, 0.3)'
+              }}
+              onMouseEnter={(e) => {
+                if (!isSavingError && errorType && errorTitle.trim()) {
+                  e.currentTarget.style.backgroundColor = '#d97706';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = (isSavingError || !errorType || !errorTitle.trim()) ? '#cbd5e1' : '#f59e0b';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              {isSavingError ? '⏳ Flagging...' : '🚩 Flag Error'}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {/* All Errors Section (including resolved and cleared) - at the end for reference */}
+      {Array.isArray(clientErrors) && clientErrors.length > 0 && (() => {
+        // Group errors by app
+        const errorsByApp: { [key: string]: any[] } = {};
+        const generalErrors: any[] = [];
+        
+        clientErrors.forEach((error: any) => {
+          const appId = error.client_app_id;
+          const appName = error.client_apps?.apps?.name || 'General';
+          
+          if (appId) {
+            const key = `${appId}_${appName}`;
+            if (!errorsByApp[key]) {
+              errorsByApp[key] = [];
+            }
+            errorsByApp[key].push(error);
+          } else {
+            generalErrors.push(error);
+          }
+        });
+        
+        // Add general errors as a separate group if they exist
+        if (generalErrors.length > 0) {
+          errorsByApp['general_General'] = generalErrors;
+        }
+        
+        return (
+          <section style={{ marginTop: '2rem', marginBottom: '2rem' }}>
+            <div style={{ marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+                All Errors ({clientErrors.length} total, {clientErrors.filter((e: any) => !e.resolved_at && !e.cleared_at).length} active)
+              </h2>
+            </div>
+          
+          {errorsLoading ? (
+            <LoadingSpinner message="Loading errors..." />
+          ) : errorsError ? (
+            <ErrorMessage error={errorsError} onRetry={mutateErrors} />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              {Object.entries(errorsByApp).map(([appKey, appErrors]) => {
+                const appName = appErrors[0]?.client_apps?.apps?.name || 'General';
+                const appId = appErrors[0]?.client_app_id || null;
+                const activeErrors = appErrors.filter((e: any) => !e.resolved_at && !e.cleared_at);
+                const hasActiveErrors = activeErrors.length > 0;
+                
+                return (
+                  <div key={appKey} style={{ 
+                    backgroundColor: '#f8fafc', 
+                    padding: '1.5rem', 
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0 }}>
+                        {appName} ({appErrors.length} total, {activeErrors.length} active)
+                      </h3>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      {appErrors.map((error: any) => {
+                const isResolved = !!error.resolved_at;
+                const isCleared = !!error.cleared_at;
+                const severityColor = error.severity === 'critical' ? '#ef4444' : 
+                                     error.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+                const appName = error.client_apps?.apps?.name || 'N/A';
+                const isEditing = editingErrorId === error.id;
+
+                return (
+                  <div
+                    key={error.id}
+                    style={{
+                      backgroundColor: isResolved || isCleared ? '#f8fafc' : '#fff',
+                      padding: '1.5rem',
+                      borderRadius: '8px',
+                      border: `2px solid ${isResolved ? '#cbd5e1' : isCleared ? '#94a3b8' : severityColor}`,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                      position: 'relative'
+                    }}
+                  >
+                    <div style={{ 
+                      position: 'absolute', 
+                      top: '0.5rem', 
+                      right: '0.5rem', 
+                      zIndex: 20,
+                      visibility: isCleared ? 'visible' : 'hidden',
+                      opacity: isCleared ? 1 : 0,
+                      transition: 'opacity 0.2s ease, visibility 0.2s ease'
+                    }}>
+                      <button
+                        onClick={() => handleClearError(error.id, false)}
+                        style={{
+                          padding: '0.625rem 1.25rem',
+                          backgroundColor: '#60a5fa',
+                          color: 'white',
+                          border: '2px solid #3b82f6',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          fontWeight: '600',
+                          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+                          transition: 'all 0.2s ease',
+                          transform: 'translateY(0)'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#3b82f6';
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.5)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#60a5fa';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
+                        }}
+                      >
+                        ↻ Unclear
+                      </button>
+                    </div>
+                    <div style={{ opacity: isResolved || isCleared ? 0.7 : 1 }}>
+                    {isEditing ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '1.5rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '2px solid #3b82f6' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                          <div>
+                            <label style={{ 
+                              display: 'block', 
+                              marginBottom: '0.75rem', 
+                              fontWeight: '600', 
+                              fontSize: '0.95rem',
+                              color: '#1e293b'
+                            }}>
+                              Error Type <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <div style={{ position: 'relative' }}>
+                              <input
+                                type="text"
+                                value={editingErrorTypeInput}
+                                onChange={handleEditingErrorTypeChange}
+                                onFocus={() => setShowEditingErrorTypeDropdown(true)}
+                                onBlur={() => setTimeout(() => setShowEditingErrorTypeDropdown(false), 100)}
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '0.75rem', 
+                                  border: editingErrorType ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                                  borderRadius: '8px',
+                                  fontSize: '0.95rem',
+                                  backgroundColor: '#fff',
+                                  transition: 'border-color 0.2s',
+                                  outline: 'none'
+                                }}
+                                disabled={isSavingErrorEdit}
+                                placeholder="Select or type error type"
+                              />
+                              {showEditingErrorTypeDropdown && (filteredEditingErrorTypes.length > 0 || editingErrorTypeInput.trim()) && (
+                                <ul style={{
+                                  position: 'absolute',
+                                  top: '100%',
+                                  left: 0,
+                                  right: 0,
+                                  backgroundColor: '#fff',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '8px',
+                                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                  zIndex: 20,
+                                  maxHeight: '200px',
+                                  overflowY: 'auto',
+                                  listStyle: 'none',
+                                  padding: 0,
+                                  margin: '0.5rem 0 0 0'
+                                }}>
+                                  {filteredEditingErrorTypes.map((type) => (
+                                    <li
+                                      key={type.value}
+                                      onMouseDown={() => {
+                                        setEditingErrorType(type.value);
+                                        setEditingErrorTypeInput(type.label);
+                                        setShowEditingErrorTypeDropdown(false);
+                                      }}
+                                      style={{
+                                        padding: '0.75rem 1rem',
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem',
+                                        color: '#334155',
+                                        borderBottom: '1px solid #f1f5f9'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0fdf4'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                    >
+                                      {type.label}
+                                    </li>
+                                  ))}
+                                  {editingErrorTypeInput.trim() && (
+                                    <li
+                                      onMouseDown={handleAddCustomEditingErrorType}
+                                      style={{
+                                        padding: '0.75rem 1rem',
+                                        cursor: 'pointer',
+                                        fontSize: '0.95rem',
+                                        color: '#3b82f6',
+                                        fontWeight: '600',
+                                        borderTop: filteredEditingErrorTypes.length > 0 ? '1px solid #e2e8f0' : 'none'
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                                    >
+                                      + Add custom type: "{editingErrorTypeInput}"
+                                    </li>
+                                  )}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <label style={{ 
+                              display: 'block', 
+                              marginBottom: '0.75rem', 
+                              fontWeight: '600', 
+                              fontSize: '0.95rem',
+                              color: '#1e293b'
+                            }}>
+                              Severity <span style={{ color: '#ef4444' }}>*</span>
+                            </label>
+                            <select
+                              value={editingErrorSeverity}
+                              onChange={(e) => setEditingErrorSeverity(e.target.value as 'critical' | 'warning' | 'info')}
+                              style={{ 
+                                width: '100%', 
+                                padding: '0.75rem', 
+                                border: '2px solid #cbd5e1', 
+                                borderRadius: '8px',
+                                fontSize: '0.95rem',
+                                backgroundColor: '#fff',
+                                cursor: 'pointer',
+                                transition: 'border-color 0.2s',
+                                outline: 'none'
+                              }}
+                              disabled={isSavingErrorEdit}
+                              onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                              onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                            >
+                              <option value="critical">🔴 Critical</option>
+                              <option value="warning">🟠 Warning</option>
+                              <option value="info">🔵 Info</option>
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Title <span style={{ color: '#ef4444' }}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editingErrorTitle}
+                            onChange={(e) => setEditingErrorTitle(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: editingErrorTitle.trim() ? '2px solid #10b981' : '2px solid #cbd5e1', 
+                              borderRadius: '8px',
+                              fontSize: '0.95rem',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = editingErrorTitle.trim() ? '#10b981' : '#cbd5e1'}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Description
+                          </label>
+                          <textarea
+                            value={editingErrorDescription}
+                            onChange={(e) => setEditingErrorDescription(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: '2px solid #cbd5e1', 
+                              borderRadius: '8px', 
+                              minHeight: '120px',
+                              fontSize: '0.95rem',
+                              fontFamily: 'inherit',
+                              resize: 'vertical',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                          />
+                        </div>
+                        
+                        <div>
+                          <label style={{ 
+                            display: 'block', 
+                            marginBottom: '0.75rem', 
+                            fontWeight: '600', 
+                            fontSize: '0.95rem',
+                            color: '#1e293b'
+                          }}>
+                            Related App Process <span style={{ fontWeight: '400', color: '#64748b', fontSize: '0.85rem' }}>(Optional)</span>
+                          </label>
+                          <select
+                            value={editingErrorClientAppId}
+                            onChange={(e) => setEditingErrorClientAppId(e.target.value)}
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.75rem', 
+                              border: '2px solid #cbd5e1', 
+                              borderRadius: '8px',
+                              fontSize: '0.95rem',
+                              backgroundColor: '#fff',
+                              cursor: 'pointer',
+                              transition: 'border-color 0.2s',
+                              outline: 'none'
+                            }}
+                            disabled={isSavingErrorEdit}
+                            onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+                          >
+                            <option value="">None (general client error)</option>
+                            {relatedApps.map((app: any) => (
+                              <option key={app.id} value={app.id}>
+                                {app.app?.name ?? 'Unknown'} - {app.status}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1.5rem', borderTop: '2px solid #e2e8f0' }}>
+                          <button
+                            onClick={handleCancelErrorEdit}
+                            disabled={isSavingErrorEdit}
+                            style={{
+                              padding: '0.75rem 1.5rem',
+                              backgroundColor: '#e2e8f0',
+                              color: '#475569',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: isSavingErrorEdit ? 'not-allowed' : 'pointer',
+                              fontSize: '0.95rem',
+                              fontWeight: '600',
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => !isSavingErrorEdit && (e.currentTarget.style.backgroundColor = '#cbd5e1')}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveErrorEdit}
+                            disabled={isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()}
+                            style={{
+                              padding: '0.75rem 1.5rem',
+                              backgroundColor: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? '#cbd5e1' : '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? 'not-allowed' : 'pointer',
+                              fontSize: '0.95rem',
+                              fontWeight: '600',
+                              transition: 'background-color 0.2s, transform 0.1s',
+                              boxShadow: (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? 'none' : '0 4px 12px rgba(16, 185, 129, 0.3)'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSavingErrorEdit && editingErrorType && editingErrorTitle.trim()) {
+                                e.currentTarget.style.backgroundColor = '#059669';
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = (isSavingErrorEdit || !editingErrorType || !editingErrorTitle.trim()) ? '#cbd5e1' : '#10b981';
+                              e.currentTarget.style.transform = 'translateY(0)';
+                            }}
+                          >
+                            {isSavingErrorEdit ? '⏳ Saving...' : '💾 Save Changes'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', paddingRight: '5rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                              <div
+                                style={{
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  backgroundColor: severityColor,
+                                  flexShrink: 0
+                                }}
+                              />
+                              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '600', textDecoration: isResolved || isCleared ? 'line-through' : 'none' }}>
+                                {error.title}
+                              </h3>
+                              {isResolved && (
+                                <span style={{
+                                  padding: '0.25rem 0.5rem',
+                                  backgroundColor: '#10b981',
+                                  color: 'white',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '600'
+                                }}>
+                                  ✓ Resolved
+                                </span>
+                              )}
+                              {isCleared && !isResolved && (
+                                <span style={{
+                                  padding: '0.25rem 0.5rem',
+                                  backgroundColor: '#64748b',
+                                  color: 'white',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '600'
+                                }}>
+                                  🗑️ Cleared
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.9rem', color: '#64748b', marginLeft: '1.75rem', marginBottom: '0.5rem' }}>
+                              {error.description || 'No description provided'}
+                            </div>
+                            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginLeft: '1.75rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                              <span>
+                                <strong>Type:</strong> {error.error_type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                              </span>
+                              <span>
+                                <strong>Severity:</strong> {error.severity.toUpperCase()}
+                              </span>
+                              <span>
+                                <strong>App:</strong> {appName}
+                              </span>
+                              <span>
+                                <strong>Detected:</strong> {new Date(error.detected_at).toLocaleString('it-IT')}
+                              </span>
+                              {isResolved && error.resolved_at && (
+                                <span style={{ color: '#10b981', fontWeight: '600' }}>
+                                  <strong>Resolved:</strong> {new Date(error.resolved_at).toLocaleString('it-IT')}
+                                </span>
+                              )}
+                              {isCleared && error.cleared_at && (
+                                <span style={{ color: '#64748b', fontWeight: '600' }}>
+                                  <strong>Cleared:</strong> {new Date(error.cleared_at).toLocaleString('it-IT')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                            {!isResolved ? (
+                              <button
+                                onClick={() => handleResolveError(error.id, true)}
+                                style={{
+                                  padding: '0.5rem 1rem',
+                                  backgroundColor: '#10b981',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                ✓ Resolve
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleResolveError(error.id, false)}
+                                style={{
+                                  padding: '0.5rem 1rem',
+                                  backgroundColor: '#3b82f6',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                ↻ Reopen
+                              </button>
+                            )}
+                            {!isCleared && (
+                              <button
+                                onClick={() => handleClearError(error.id, true)}
+                                style={{
+                                  padding: '0.5rem 1rem',
+                                  backgroundColor: '#64748b',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.875rem',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                🗑️ Clear
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleEditError(error)}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '500'
+                              }}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteError(error.id)}
+                              style={{
+                                padding: '0.5rem 1rem',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '500'
+                              }}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    </div>
+                      </div>
+                    );
+                  })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        );
+      })()}
+      
       <ConfirmationModal
         isOpen={deleteModal.isOpen}
         title={getDeleteModalContent().title}
@@ -3191,6 +5769,17 @@ export default function ClientDetailPage() {
         variant={deleteModal.type === 'markAsPaid' ? 'info' : 'danger'}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteModal({ isOpen: false, type: null, id: null })}
+      />
+      
+      <ConfirmationModal
+        isOpen={clearAllModal.isOpen}
+        title="Clear All Errors"
+        message="Are you sure you want to clear all errors? They will be hidden from the dashboard but can still be viewed here. They will not reappear when 'Detect Errors' is run again."
+        confirmLabel="Clear All"
+        cancelLabel="Cancel"
+        variant="warning"
+        onConfirm={clearAllErrors}
+        onCancel={() => setClearAllModal({ isOpen: false })}
       />
       
       <Toast

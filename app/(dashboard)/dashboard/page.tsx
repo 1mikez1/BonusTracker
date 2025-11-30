@@ -47,6 +47,7 @@ export default function UnifiedDashboardPage() {
   const [filterSeverity, setFilterSeverity] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
   const [isDetecting, setIsDetecting] = useState(false);
   const [lastDetection, setLastDetection] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['overdue_deadlines', 'due_soon_deadlines', 'clients_with_errors', 'recent_errors'])); // Default: all error sections expanded
 
   // Fetch all clients
   const { data: clients, isLoading: clientsLoading, error: clientsError, mutate: mutateClients } = useSupabaseData({
@@ -56,11 +57,13 @@ export default function UnifiedDashboardPage() {
   });
 
   // Fetch all client errors (optional - table might not exist in all environments)
+  // Filter out resolved and cleared errors
   const { data: errors, isLoading: errorsLoading, error: errorsError, mutate: mutateErrors } = useSupabaseData({
     table: 'client_errors' as any,
-    select: 'id, error_type, severity, title, description, detected_at, client_id, client_app_id, clients!client_id(id, name, surname), client_apps(id, apps(name))',
+    select: 'id, error_type, severity, title, description, detected_at, client_id, client_app_id, cleared_at, clients!client_id(id, name, surname), client_apps(id, apps(name))',
     filters: {
-      resolved_at: { is: null }
+      resolved_at: { is: null },
+      cleared_at: { is: null }
     },
     order: { column: 'detected_at' as any, ascending: false }
   }) as { data: ClientError[] | undefined; isLoading: boolean; error: any; mutate: () => void };
@@ -68,7 +71,7 @@ export default function UnifiedDashboardPage() {
   // Fetch deadlines (overdue and due soon)
   const { data: deadlines, isLoading: deadlinesLoading } = useSupabaseData({
     table: 'client_apps',
-    select: 'id, deadline_at, status, apps(name), clients!client_apps_client_id_fkey(id, name, surname)',
+    select: 'id, deadline_at, status, apps(name), clients!client_id(id, name, surname)',
     filters: {
       deadline_at: { not: { is: null } } as any
     },
@@ -193,6 +196,19 @@ export default function UnifiedDashboardPage() {
     return deadlines.filter((d: any) => 
       d.deadline_at && 
       new Date(d.deadline_at) < now && 
+      !['completed', 'paid', 'cancelled'].includes(d.status)
+    ).slice(0, 10);
+  }, [deadlines]);
+
+  // Due soon deadlines (within 48 hours)
+  const dueSoonDeadlinesList = useMemo(() => {
+    if (!deadlines) return [];
+    const now = new Date();
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    return deadlines.filter((d: any) => 
+      d.deadline_at && 
+      new Date(d.deadline_at) >= now && 
+      new Date(d.deadline_at) <= in48h &&
       !['completed', 'paid', 'cancelled'].includes(d.status)
     ).slice(0, 10);
   }, [deadlines]);
@@ -478,17 +494,219 @@ export default function UnifiedDashboardPage() {
         </button>
       </div>
 
+      {/* Overdue Deadlines */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('overdue_deadlines')) {
+              newExpanded.delete('overdue_deadlines');
+            } else {
+              newExpanded.add('overdue_deadlines');
+            }
+            setExpandedSections(newExpanded);
+          }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            padding: '0.75rem 0',
+            marginBottom: '1rem',
+            borderBottom: '2px solid #e2e8f0'
+          }}
+        >
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+            Overdue Deadlines ({overdueDeadlines.length})
+          </h2>
+          <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
+            {expandedSections.has('overdue_deadlines') ? '▼' : '▶'}
+          </div>
+        </div>
+        {expandedSections.has('overdue_deadlines') && (
+          <>
+            {overdueDeadlines.length === 0 ? (
+              <EmptyState
+                title="No overdue deadlines"
+                message="All deadlines are on track!"
+              />
+            ) : (
+              <div style={{ display: 'grid', gap: '1rem' }}>
+            {overdueDeadlines.map((deadline: any) => {
+              const clientName = deadline.clients 
+                ? `${deadline.clients.name} ${deadline.clients.surname || ''}`.trim()
+                : 'Unknown';
+              const appName = deadline.apps?.name || 'Unknown App';
+              const daysOverdue = Math.floor((new Date().getTime() - new Date(deadline.deadline_at).getTime()) / (1000 * 60 * 60 * 24));
+
+              return (
+                <Link
+                  key={deadline.id}
+                  href={`/clients/${deadline.clients?.id}`}
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  <div style={{
+                    backgroundColor: '#fff',
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    border: '2px solid #ef4444',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: '600' }}>{appName}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{clientName}</div>
+                      </div>
+                      <div style={{ color: '#ef4444', fontWeight: '600' }}>
+                        {daysOverdue} day{daysOverdue !== 1 ? 's' : ''} overdue
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Due Soon Deadlines (48h) */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('due_soon_deadlines')) {
+              newExpanded.delete('due_soon_deadlines');
+            } else {
+              newExpanded.add('due_soon_deadlines');
+            }
+            setExpandedSections(newExpanded);
+          }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            padding: '0.75rem 0',
+            marginBottom: '1rem',
+            borderBottom: '2px solid #e2e8f0'
+          }}
+        >
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+            Due Soon (48h) ({dueSoonDeadlinesList.length})
+          </h2>
+          <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
+            {expandedSections.has('due_soon_deadlines') ? '▼' : '▶'}
+          </div>
+        </div>
+        {expandedSections.has('due_soon_deadlines') && (
+          <>
+            {dueSoonDeadlinesList.length === 0 ? (
+              <EmptyState
+                title="No deadlines due soon"
+                message="No deadlines are due within the next 48 hours."
+              />
+            ) : (
+              <div style={{ display: 'grid', gap: '1rem' }}>
+            {dueSoonDeadlinesList.map((deadline: any) => {
+              const clientName = deadline.clients 
+                ? `${deadline.clients.name} ${deadline.clients.surname || ''}`.trim()
+                : 'Unknown';
+              const appName = deadline.apps?.name || 'Unknown App';
+              const deadlineDate = new Date(deadline.deadline_at);
+              const now = new Date();
+              const hoursUntil = Math.floor((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60));
+              const daysUntil = Math.floor(hoursUntil / 24);
+              const remainingHours = hoursUntil % 24;
+
+              return (
+                <Link
+                  key={deadline.id}
+                  href={`/clients/${deadline.clients?.id}`}
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  <div style={{
+                    backgroundColor: '#fff',
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    border: '2px solid #f59e0b',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: '600' }}>{appName}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{clientName}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>
+                          Due: {deadlineDate.toLocaleString('it-IT', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </div>
+                      </div>
+                      <div style={{ color: '#f59e0b', fontWeight: '600', textAlign: 'right' }}>
+                        {daysUntil > 0 ? (
+                          <>
+                            {daysUntil} day{daysUntil !== 1 ? 's' : ''}
+                            {remainingHours > 0 && <div style={{ fontSize: '0.85rem' }}>{remainingHours}h left</div>}
+                          </>
+                        ) : (
+                          <>{hoursUntil}h left</>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Clients with Errors */}
       <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1rem' }}>
-          Clients with Errors ({clientsWithErrors.length})
-        </h2>
-        {clientsWithErrors.length === 0 ? (
-          <EmptyState
-            title="No clients with errors"
-            message="All clients are error-free!"
-          />
-        ) : (
+        <div
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('clients_with_errors')) {
+              newExpanded.delete('clients_with_errors');
+            } else {
+              newExpanded.add('clients_with_errors');
+            }
+            setExpandedSections(newExpanded);
+          }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            padding: '0.75rem 0',
+            marginBottom: '1rem',
+            borderBottom: '2px solid #e2e8f0'
+          }}
+        >
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+            Clients with Errors ({clientsWithErrors.length})
+          </h2>
+          <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
+            {expandedSections.has('clients_with_errors') ? '▼' : '▶'}
+          </div>
+        </div>
+        {expandedSections.has('clients_with_errors') && (
+          <>
+            {clientsWithErrors.length === 0 ? (
+              <EmptyState
+                title="No clients with errors"
+                message="All clients are error-free!"
+              />
+            ) : (
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
@@ -557,20 +775,48 @@ export default function UnifiedDashboardPage() {
               );
             })}
           </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Recent Errors */}
       <div style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1rem' }}>
-          Recent Errors ({filteredErrors.length})
-        </h2>
-        {filteredErrors.length === 0 ? (
-          <EmptyState
-            title="No errors found"
-            message={`No ${filterSeverity === 'all' ? '' : filterSeverity} errors detected.`}
-          />
-        ) : (
+        <div
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('recent_errors')) {
+              newExpanded.delete('recent_errors');
+            } else {
+              newExpanded.add('recent_errors');
+            }
+            setExpandedSections(newExpanded);
+          }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            padding: '0.75rem 0',
+            marginBottom: '1rem',
+            borderBottom: '2px solid #e2e8f0'
+          }}
+        >
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
+            Recent Errors ({filteredErrors.length})
+          </h2>
+          <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
+            {expandedSections.has('recent_errors') ? '▼' : '▶'}
+          </div>
+        </div>
+        {expandedSections.has('recent_errors') && (
+          <>
+            {filteredErrors.length === 0 ? (
+              <EmptyState
+                title="No errors found"
+                message={`No ${filterSeverity === 'all' ? '' : filterSeverity} errors detected.`}
+              />
+            ) : (
           <div style={{ display: 'grid', gap: '1rem' }}>
             {filteredErrors.slice(0, 20).map((error) => {
               const clientName = error.clients 
@@ -659,53 +905,10 @@ export default function UnifiedDashboardPage() {
               return <div key={error.id}>{ErrorContent}</div>;
             })}
           </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* Overdue Deadlines */}
-      {overdueDeadlines.length > 0 && (
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1rem' }}>
-            Overdue Deadlines ({overdueDeadlines.length})
-          </h2>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            {overdueDeadlines.map((deadline: any) => {
-              const clientName = deadline.clients 
-                ? `${deadline.clients.name} ${deadline.clients.surname || ''}`.trim()
-                : 'Unknown';
-              const appName = deadline.apps?.name || 'Unknown App';
-              const daysOverdue = Math.floor((new Date().getTime() - new Date(deadline.deadline_at).getTime()) / (1000 * 60 * 60 * 24));
-
-              return (
-                <Link
-                  key={deadline.id}
-                  href={`/clients/${deadline.clients?.id}`}
-                  style={{ textDecoration: 'none', color: 'inherit' }}
-                >
-                  <div style={{
-                    backgroundColor: '#fff',
-                    padding: '1rem',
-                    borderRadius: '8px',
-                    border: '2px solid #ef4444',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                    cursor: 'pointer'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: '600' }}>{appName}</div>
-                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{clientName}</div>
-                      </div>
-                      <div style={{ color: '#ef4444', fontWeight: '600' }}>
-                        {daysOverdue} day{daysOverdue !== 1 ? 's' : ''} overdue
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Last Detection */}
       {lastDetection && (

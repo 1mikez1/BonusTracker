@@ -60,23 +60,23 @@ async function findClientByName(name: string, surname: string | null): Promise<s
   
   // Strategy 1: Exact match with name and surname
   if (surname) {
-    let query = supabase
-      .from('clients')
-      .select('id, name, surname')
-      .ilike('name', name.trim());
-    
+  let query = supabase
+    .from('clients')
+    .select('id, name, surname')
+    .ilike('name', name.trim());
+  
     query = query.ilike('surname', surname.trim());
-    
-    const { data, error } = await query.limit(1).maybeSingle();
-    
+  
+  const { data, error } = await query.limit(1).maybeSingle();
+  
     if (error && error.code !== 'PGRST116') {
       console.error(`Error finding client ${name} ${surname}:`, error);
-      return null;
-    }
-    
-    if (data) {
-      return data.id;
-    }
+    return null;
+  }
+  
+  if (data) {
+    return data.id;
+  }
   }
   
   // Strategy 2: Match by full name (when surname might be in name field)
@@ -84,7 +84,7 @@ async function findClientByName(name: string, surname: string | null): Promise<s
   const normalizedFullName = normalizeName(fullName);
   
   const { data: allClients } = await supabase
-    .from('clients')
+      .from('clients')
     .select('id, name, surname');
   
   if (allClients) {
@@ -105,8 +105,8 @@ async function findClientByName(name: string, surname: string | null): Promise<s
           normalizedFullName.includes(normalizedClientFullName)) {
         return client.id;
       }
-    }
-    
+      }
+      
     // Strategy 3: Match by first name only (if surname matches partially)
     if (surname) {
       for (const client of allClients) {

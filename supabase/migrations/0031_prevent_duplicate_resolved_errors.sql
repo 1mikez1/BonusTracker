@@ -1,68 +1,9 @@
--- Migration: Add error detection system for clients and client_apps
--- This migration adds error tracking and automatic error detection
+-- Migration: Prevent duplicate errors when resolved errors are re-detected
+-- This fixes the issue where clicking "Detect Errors" after resolving an error
+-- would create a duplicate error instead of respecting the resolution
 
--- Step 1: Create error_type enum
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'error_type') THEN
-        CREATE TYPE public.error_type AS ENUM (
-            'document_rejected',
-            'deadline_missed',
-            'referral_incoherent',
-            'missing_steps',
-            'note_error',
-            'csv_import_incoherent',
-            'missing_deposit',
-            'stale_update',
-            'status_mismatch'
-        );
-        
-        COMMENT ON TYPE public.error_type IS 
-        'Types of errors that can be detected automatically.';
-    END IF;
-END $$;
-
--- Step 2: Create client_errors table
-CREATE TABLE IF NOT EXISTS public.client_errors (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_id uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
-    client_app_id uuid REFERENCES public.client_apps(id) ON DELETE CASCADE,
-    error_type public.error_type NOT NULL,
-    severity text NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
-    title text NOT NULL,
-    description text,
-    detected_at timestamptz NOT NULL DEFAULT now(),
-    resolved_at timestamptz,
-    resolved_by uuid REFERENCES auth.users(id),
-    metadata jsonb,
-    CONSTRAINT client_errors_unique UNIQUE (client_id, client_app_id, error_type, resolved_at)
-);
-
-COMMENT ON TABLE public.client_errors IS 
-'Automatic error detection log. Errors are detected and logged, can be resolved manually.';
-
-COMMENT ON COLUMN public.client_errors.severity IS 
-'Severity level: critical (red badge), warning (orange), info (blue).';
-
--- Step 3: Add indexes
-CREATE INDEX IF NOT EXISTS idx_client_errors_client 
-ON public.client_errors(client_id);
-
-CREATE INDEX IF NOT EXISTS idx_client_errors_client_app 
-ON public.client_errors(client_app_id) 
-WHERE client_app_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_client_errors_type 
-ON public.client_errors(error_type);
-
-CREATE INDEX IF NOT EXISTS idx_client_errors_resolved 
-ON public.client_errors(resolved_at) 
-WHERE resolved_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_client_errors_severity 
-ON public.client_errors(severity);
-
--- Step 4: Create function to detect errors for a client
+-- Update the detect_client_errors function to check for existing errors
+-- (resolved or unresolved) before creating new ones
 CREATE OR REPLACE FUNCTION public.detect_client_errors(p_client_id uuid)
 RETURNS integer
 LANGUAGE plpgsql
@@ -207,7 +148,6 @@ BEGIN
     END LOOP;
 
     -- Error 4: Missing steps (onboarding steps incomplete for active apps)
-    -- This is a simplified check - can be enhanced based on actual step tracking logic
     FOR v_client_app_id, v_app_name, v_completed_steps IN
         SELECT 
             ca.id,
@@ -403,50 +343,5 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.detect_client_errors(uuid) IS 
-'Detects and logs all errors for a specific client. Returns count of errors detected.';
-
--- Step 5: Create function to detect errors for all clients
-CREATE OR REPLACE FUNCTION public.detect_all_client_errors()
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-    total_detected integer := 0;
-    v_client_id uuid;
-BEGIN
-    -- Process all clients
-    FOR v_client_id IN
-        SELECT id FROM public.clients
-    LOOP
-        total_detected := total_detected + public.detect_client_errors(v_client_id);
-    END LOOP;
-
-    RETURN total_detected;
-END;
-$$;
-
-COMMENT ON FUNCTION public.detect_all_client_errors() IS 
-'Detects errors for all clients. Useful for batch processing or scheduled jobs.';
-
--- Step 6: Enable RLS
-ALTER TABLE public.client_errors ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "client_errors authenticated full access"
-    ON public.client_errors
-    FOR ALL
-    USING (auth.uid() IS NOT NULL)
-    WITH CHECK (auth.uid() IS NOT NULL);
-
--- Step 7: Log migration completion
-DO $$
-BEGIN
-    RAISE NOTICE '✅ Migration 0028 completed: Added error detection system';
-    RAISE NOTICE '   - error_type enum (9 error types)';
-    RAISE NOTICE '   - client_errors table (error log)';
-    RAISE NOTICE '   - Function detect_client_errors(client_id)';
-    RAISE NOTICE '   - Function detect_all_client_errors()';
-    RAISE NOTICE '   - Indexes created for performance';
-END $$;
+'Detects and logs all errors for a specific client. Returns count of errors detected. Prevents duplicate errors if one was recently resolved (within 24 hours).';
 

@@ -75,13 +75,13 @@ export function Pagination({
         {onPageSizeChange && (
           <select
             value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
             style={{
               padding: '0.35rem 0.75rem',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
               fontSize: '0.875rem'
             }}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
           >
             <option value={25}>25 per page</option>
             <option value={50}>50 per page</option>
@@ -91,7 +91,6 @@ export function Pagination({
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         <button
-          onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
           style={{
             padding: '0.5rem 0.75rem',
@@ -102,6 +101,7 @@ export function Pagination({
             cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
             fontSize: '0.875rem'
           }}
+          onClick={() => onPageChange(currentPage - 1)}
         >
           Previous
         </button>
@@ -118,7 +118,6 @@ export function Pagination({
           return (
             <button
               key={pageNum}
-              onClick={() => onPageChange(pageNum)}
               style={{
                 padding: '0.5rem 0.75rem',
                 border: '1px solid #e2e8f0',
@@ -129,13 +128,13 @@ export function Pagination({
                 fontSize: '0.875rem',
                 fontWeight: isActive ? 600 : 400
               }}
+              onClick={() => onPageChange(pageNum)}
             >
               {pageNum}
             </button>
           );
         })}
         <button
-          onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
           style={{
             padding: '0.5rem 0.75rem',
@@ -146,6 +145,7 @@ export function Pagination({
             cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
             fontSize: '0.875rem'
           }}
+          onClick={() => onPageChange(currentPage + 1)}
         >
           Next
         </button>

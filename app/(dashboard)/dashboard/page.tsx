@@ -320,7 +320,6 @@ export default function UnifiedDashboardPage() {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button
-            onClick={runErrorDetection}
             disabled={isDetecting}
             style={{
               padding: '0.5rem 1rem',
@@ -332,11 +331,11 @@ export default function UnifiedDashboardPage() {
               fontSize: '0.9rem',
               fontWeight: '500'
             }}
+            onClick={runErrorDetection}
           >
             {isDetecting ? 'Detecting...' : 'Detect Errors'}
           </button>
           <button
-            onClick={exportErrorsToCSV}
             disabled={!filteredErrors || filteredErrors.length === 0}
             style={{
               padding: '0.5rem 1rem',
@@ -348,6 +347,7 @@ export default function UnifiedDashboardPage() {
               fontSize: '0.9rem',
               fontWeight: '500'
             }}
+            onClick={exportErrorsToCSV}
           >
             Export CSV
           </button>
@@ -497,15 +497,6 @@ export default function UnifiedDashboardPage() {
       {/* Overdue Deadlines */}
       <div style={{ marginBottom: '2rem' }}>
         <div
-          onClick={() => {
-            const newExpanded = new Set(expandedSections);
-            if (newExpanded.has('overdue_deadlines')) {
-              newExpanded.delete('overdue_deadlines');
-            } else {
-              newExpanded.add('overdue_deadlines');
-            }
-            setExpandedSections(newExpanded);
-          }}
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -514,6 +505,15 @@ export default function UnifiedDashboardPage() {
             padding: '0.75rem 0',
             marginBottom: '1rem',
             borderBottom: '2px solid #e2e8f0'
+          }}
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('overdue_deadlines')) {
+              newExpanded.delete('overdue_deadlines');
+            } else {
+              newExpanded.add('overdue_deadlines');
+            }
+            setExpandedSections(newExpanded);
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
@@ -575,15 +575,6 @@ export default function UnifiedDashboardPage() {
       {/* Due Soon Deadlines (48h) */}
       <div style={{ marginBottom: '2rem' }}>
         <div
-          onClick={() => {
-            const newExpanded = new Set(expandedSections);
-            if (newExpanded.has('due_soon_deadlines')) {
-              newExpanded.delete('due_soon_deadlines');
-            } else {
-              newExpanded.add('due_soon_deadlines');
-            }
-            setExpandedSections(newExpanded);
-          }}
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -592,6 +583,15 @@ export default function UnifiedDashboardPage() {
             padding: '0.75rem 0',
             marginBottom: '1rem',
             borderBottom: '2px solid #e2e8f0'
+          }}
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('due_soon_deadlines')) {
+              newExpanded.delete('due_soon_deadlines');
+            } else {
+              newExpanded.add('due_soon_deadlines');
+            }
+            setExpandedSections(newExpanded);
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
@@ -673,15 +673,6 @@ export default function UnifiedDashboardPage() {
       {/* Clients with Errors */}
       <div style={{ marginBottom: '2rem' }}>
         <div
-          onClick={() => {
-            const newExpanded = new Set(expandedSections);
-            if (newExpanded.has('clients_with_errors')) {
-              newExpanded.delete('clients_with_errors');
-            } else {
-              newExpanded.add('clients_with_errors');
-            }
-            setExpandedSections(newExpanded);
-          }}
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -690,6 +681,15 @@ export default function UnifiedDashboardPage() {
             padding: '0.75rem 0',
             marginBottom: '1rem',
             borderBottom: '2px solid #e2e8f0'
+          }}
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('clients_with_errors')) {
+              newExpanded.delete('clients_with_errors');
+            } else {
+              newExpanded.add('clients_with_errors');
+            }
+            setExpandedSections(newExpanded);
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
@@ -783,15 +783,6 @@ export default function UnifiedDashboardPage() {
       {/* Recent Errors */}
       <div style={{ marginBottom: '2rem' }}>
         <div
-          onClick={() => {
-            const newExpanded = new Set(expandedSections);
-            if (newExpanded.has('recent_errors')) {
-              newExpanded.delete('recent_errors');
-            } else {
-              newExpanded.add('recent_errors');
-            }
-            setExpandedSections(newExpanded);
-          }}
           style={{
             display: 'flex',
             justifyContent: 'space-between',
@@ -800,6 +791,15 @@ export default function UnifiedDashboardPage() {
             padding: '0.75rem 0',
             marginBottom: '1rem',
             borderBottom: '2px solid #e2e8f0'
+          }}
+          onClick={() => {
+            const newExpanded = new Set(expandedSections);
+            if (newExpanded.has('recent_errors')) {
+              newExpanded.delete('recent_errors');
+            } else {
+              newExpanded.add('recent_errors');
+            }
+            setExpandedSections(newExpanded);
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>

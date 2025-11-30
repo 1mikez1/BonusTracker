@@ -71,6 +71,8 @@ interface ReferralDetailModalProps {
   onUsageUpdate?: () => void;
 }
 
+const usedByOptions = ['Jacopo', 'Luna', 'Marco'];
+
 function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: ReferralDetailModalProps) {
   const [editingUsageId, setEditingUsageId] = useState<string | null>(null);
   const [editingClientId, setEditingClientId] = useState<string>('');
@@ -90,8 +92,6 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
   const [showNewUsageUsedByDropdown, setShowNewUsageUsedByDropdown] = useState<boolean>(false);
   const [newUsageRedeemed, setNewUsageRedeemed] = useState<boolean>(false);
   const [newUsageNotes, setNewUsageNotes] = useState<string>('');
-
-  const usedByOptions = ['Jacopo', 'Luna', 'Marco'];
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; usageId: string | null }>({
     isOpen: false,
     usageId: null
@@ -102,8 +102,6 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
     order: { column: 'name', ascending: true }
   });
   const supabase = getSupabaseClient();
-
-  if (!referral) return null;
 
   // Filter clients based on search input (for editing)
   const filteredClients = useMemo(() => {
@@ -193,7 +191,7 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
     setIsSavingUsage(true);
     try {
       const insertData: any = {
-        referral_link_id: referral.id,
+        referral_link_id: referralData.id,
         used_at: newUsageUsedAt,
         used_by: newUsageUsedBy.trim() || null,
         redeemed: newUsageRedeemed,
@@ -208,13 +206,13 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
       }
 
       const { error } = await supabase
-        .from('referral_link_usages')
+        .from('referral_link_usages' as any)
         .insert(insertData);
 
       if (error) throw error;
 
       // Update referral link stats
-      await supabase.rpc('update_referral_link_stats', { p_referral_link_id: referral.id });
+      await (supabase as any).rpc('update_referral_link_stats', { p_referral_link_id: referralData.id });
 
       // Trigger refresh of usage data
       if (onUsageUpdate) {
@@ -329,7 +327,7 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
       }
 
       const { error } = await supabase
-        .from('referral_link_usages')
+        .from('referral_link_usages' as any)
         .update(updateData)
         .eq('id', usageId);
 
@@ -358,7 +356,7 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
     setIsSavingUsage(true);
     try {
       const { error } = await supabase
-        .from('referral_link_usages')
+        .from('referral_link_usages' as any)
         .delete()
         .eq('id', deleteModal.usageId);
 
@@ -428,6 +426,11 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
     }
   };
 
+  if (!referral) return null;
+
+  // TypeScript assertion: referral is not null after the check above
+  const referralData = referral;
+
   return (
     <div
       style={{
@@ -480,15 +483,15 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
             <div>
               <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>App</div>
-              <div style={{ fontWeight: '600' }}>{referral.apps?.name || 'Unknown'}</div>
+              <div style={{ fontWeight: '600' }}>{referralData.apps?.name || 'Unknown'}</div>
             </div>
             <div>
               <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>Account</div>
-              <div style={{ fontWeight: '600' }}>{referral.account_name || '—'}</div>
+              <div style={{ fontWeight: '600' }}>{referralData.account_name || '—'}</div>
             </div>
             <div>
               <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>Code</div>
-              <div style={{ fontWeight: '600' }}>{referral.code || '—'}</div>
+              <div style={{ fontWeight: '600' }}>{referralData.code || '—'}</div>
             </div>
             <div>
               <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>Status</div>
@@ -498,11 +501,11 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
                   borderRadius: '12px',
                   fontSize: '0.75rem',
                   fontWeight: '600',
-                  backgroundColor: getStatusColor(referral.status),
+                  backgroundColor: getStatusColor(referralData.status),
                   color: 'white'
                 }}
               >
-                {referral.status}
+                {referralData.status}
               </span>
             </div>
           </div>
@@ -511,34 +514,34 @@ function ReferralDetailModal({ referral, usages, onClose, onUsageUpdate }: Refer
             <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>URL</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <a
-                href={referral.normalized_url || referral.url}
+                href={referralData.normalized_url || referralData.url}
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: '#2563eb', textDecoration: 'none', wordBreak: 'break-all' }}
               >
-                {referral.normalized_url || referral.url}
+                {referralData.normalized_url || referralData.url}
               </a>
-              {referral.url_validation_status !== 'valid' && (
+              {referralData.url_validation_status !== 'valid' && (
                 <span
                   style={{
                     padding: '0.15rem 0.5rem',
                     borderRadius: '8px',
                     fontSize: '0.7rem',
                     fontWeight: '600',
-                    backgroundColor: getValidationColor(referral.url_validation_status),
+                    backgroundColor: getValidationColor(referralData.url_validation_status),
                     color: 'white'
                   }}
                 >
-                  {referral.url_validation_status}
+                  {referralData.url_validation_status}
                 </span>
               )}
             </div>
           </div>
 
-          {referral.notes && (
+          {referralData.notes && (
             <div>
               <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>Notes</div>
-              <div>{referral.notes}</div>
+              <div>{referralData.notes}</div>
             </div>
           )}
         </div>
@@ -1385,9 +1388,9 @@ function ReferralEditModal({ isOpen, onClose, referral, appId, onSave }: Referra
       } else {
         finalUrl = url.trim();
         // Normalize and validate URL using SQL functions
-        const { data: normalizedUrlData } = await supabase.rpc('normalize_referral_url', { p_url: finalUrl });
-        const { data: validationStatusData } = await supabase.rpc('validate_referral_url', { p_url: finalUrl });
-        const { data: extractedCodeData } = await supabase.rpc('extract_referral_code', { p_url: finalUrl });
+        const { data: normalizedUrlData } = await (supabase as any).rpc('normalize_referral_url', { p_url: finalUrl });
+        const { data: validationStatusData } = await (supabase as any).rpc('validate_referral_url', { p_url: finalUrl });
+        const { data: extractedCodeData } = await (supabase as any).rpc('extract_referral_code', { p_url: finalUrl });
 
         normalizedUrl = normalizedUrlData || finalUrl;
         urlValidationStatus = validationStatusData || 'pending';
@@ -1822,10 +1825,7 @@ export default function ReferralLinksPage() {
         clients: link.clients,
         unique_clients: uniqueClients,
         uses_last_7_days: usesLast7Days,
-        uses_last_30_days: usesLast30Days,
-        appName: app?.name ?? 'Unknown app',
-        ownerName: owner ? `${owner.name} ${owner.surname ?? ''}`.trim() : 'Internal',
-        remaining
+        uses_last_30_days: usesLast30Days
       };
     });
   }, [referralLinks, clientApps, appHasActivePromotion]);
@@ -2175,7 +2175,7 @@ export default function ReferralLinksPage() {
                     isAvailable,
                     isLowRemaining,
                     referral: ref
-                  };
+                  } as any;
                 });
 
                 return (

@@ -83,7 +83,6 @@ export function Toast({ isOpen, message, type = 'success', onClose, duration = 3
         {message}
       </div>
       <button
-        onClick={onClose}
         style={{
           background: 'transparent',
           border: 'none',
@@ -101,6 +100,7 @@ export function Toast({ isOpen, message, type = 'success', onClose, duration = 3
           flexShrink: 0,
           opacity: 0.8
         }}
+        title="Close"
         onMouseEnter={(e) => {
           e.currentTarget.style.opacity = '1';
           e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
@@ -109,7 +109,7 @@ export function Toast({ isOpen, message, type = 'success', onClose, duration = 3
           e.currentTarget.style.opacity = '0.8';
           e.currentTarget.style.backgroundColor = 'transparent';
         }}
-        title="Close"
+        onClick={onClose}
       >
         ×
       </button>

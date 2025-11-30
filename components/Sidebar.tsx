@@ -34,7 +34,7 @@ export function Sidebar() {
         {links.map((link) => {
           const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`);
           return (
-            <Link key={link.href} href={link.href} className={isActive ? 'active' : ''}>
+            <Link className={isActive ? 'active' : ''} href={link.href} key={link.href}>
               {link.label}
             </Link>
           );

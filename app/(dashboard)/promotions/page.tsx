@@ -38,7 +38,7 @@ export default function PromotionsPage() {
   const error = promotionsError;
 
   const [appFilter, setAppFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   

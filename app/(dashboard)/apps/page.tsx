@@ -43,7 +43,7 @@ export default function AppsPage() {
   const error = appsError;
 
   const [typeFilter, setTypeFilter] = useState('all');
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState('active');
   const [bonusFilter, setBonusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);

@@ -10,12 +10,9 @@ const links = [
   { href: '/promotions', label: 'Promotions' },
   { href: '/pipeline', label: 'Pipeline' },
   { href: '/deadlines', label: 'Deadlines' },
-  { href: '/fast-check', label: 'Fast-Check' },
   { href: '/referral-links', label: 'Referral Links' },
   { href: '/debts', label: 'Debts' },
   { href: '/requests', label: 'Requests' },
-  { href: '/payment-links', label: 'Payment Links' },
-  { href: '/slots', label: 'Slots RTP' },
   { href: '/message-templates', label: 'Message Templates' }
 ];
 

@@ -46,6 +46,9 @@ export default function ClientDetailPage() {
   const [appInternalProfit, setAppInternalProfit] = useState('');
   const [appDeposited, setAppDeposited] = useState(false);
   const [appFinished, setAppFinished] = useState(false);
+  const [appIsOurDeposit, setAppIsOurDeposit] = useState(false);
+  const [appDepositSource, setAppDepositSource] = useState('');
+  const [appDepositPaidBack, setAppDepositPaidBack] = useState(false);
   const [isSavingAppDetails, setIsSavingAppDetails] = useState(false);
   
   // Forms state
@@ -770,6 +773,9 @@ export default function ClientDetailPage() {
     setAppInternalProfit(internalProfit);
     setAppDeposited(app.deposited || false);
     setAppFinished(app.finished || false);
+    setAppIsOurDeposit(app.is_our_deposit || false);
+    setAppDepositSource(app.deposit_source || '');
+    setAppDepositPaidBack(app.deposit_paid_back || false);
   };
   
   const handleSaveAppDetails = async (appId: string) => {
@@ -827,11 +833,29 @@ export default function ClientDetailPage() {
       const updateData: any = {
         status: appStatus,
         deposited: appDeposited,
-        finished: appFinished
+        finished: appFinished,
+        is_our_deposit: appIsOurDeposit,
+        deposit_paid_back: appDepositPaidBack
       };
       
       if (appDepositAmount) {
         updateData.deposit_amount = parseFloat(appDepositAmount);
+      }
+      
+      if (appIsOurDeposit) {
+        // If our deposit is checked, set deposit_source (even if empty, set to null)
+        updateData.deposit_source = appDepositSource && appDepositSource.trim() ? appDepositSource.trim() : null;
+      } else {
+        // If our deposit is not checked, clear deposit_source
+        updateData.deposit_source = null;
+      }
+      
+      // If deposit is paid back, set the paid_back_at timestamp
+      const currentDepositPaidBack = clientApp?.deposit_paid_back || false;
+      if (appDepositPaidBack && !currentDepositPaidBack) {
+        updateData.deposit_paid_back_at = new Date().toISOString();
+      } else if (!appDepositPaidBack) {
+        updateData.deposit_paid_back_at = null;
       }
       
       // Set profits (from form or promotion)
@@ -842,6 +866,8 @@ export default function ClientDetailPage() {
         updateData.profit_us = ourReward;
       }
       
+      console.log('Updating app details:', { appId, updateData });
+      
       await updateClientApp(updateData, appId, {
         onSuccess: () => {
           setEditingAppDetailsId(null);
@@ -851,12 +877,17 @@ export default function ClientDetailPage() {
           setAppInternalProfit('');
           setAppDeposited(false);
           setAppFinished(false);
+          setAppIsOurDeposit(false);
+          setAppDepositSource('');
+          setAppDepositPaidBack(false);
           setIsSavingAppDetails(false);
           mutateClientApps();
         },
         onError: (error) => {
           console.error('Error updating app details:', error);
-          alert('Failed to update app details. Please try again.');
+          console.error('Update data that failed:', updateData);
+          const errorMessage = error?.message || error?.toString() || 'Unknown error';
+          alert(`Failed to update app details: ${errorMessage}`);
           setIsSavingAppDetails(false);
         }
       });
@@ -875,6 +906,9 @@ export default function ClientDetailPage() {
     setAppInternalProfit('');
     setAppDeposited(false);
     setAppFinished(false);
+    setAppIsOurDeposit(false);
+    setAppDepositSource('');
+    setAppDepositPaidBack(false);
   };
   
   // Simple password encryption (base64 for MVP)
@@ -3738,6 +3772,60 @@ export default function ClientDetailPage() {
                         <span>Finished</span>
                       </label>
                     </div>
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={appIsOurDeposit}
+                          onChange={(e) => {
+                            setAppIsOurDeposit(e.target.checked);
+                            if (!e.target.checked) {
+                              // If unchecking, also uncheck paid back and clear source
+                              setAppDepositPaidBack(false);
+                              setAppDepositSource('');
+                            }
+                          }}
+                          disabled={isSavingAppDetails || !appDeposited}
+                        />
+                        <span style={{ fontWeight: '500' }}>Our Deposit</span>
+                        {!appDeposited && (
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
+                            (requires "Deposited" to be checked)
+                          </span>
+                        )}
+                      </label>
+                    </div>
+                    {appIsOurDeposit && (
+                      <>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                            Deposit Source
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.25rem' }}>
+                              (e.g., "Luna account", "Main wallet", "Revolut card")
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={appDepositSource}
+                            onChange={(e) => setAppDepositSource(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                            placeholder="Where did the deposit come from?"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={appDepositPaidBack}
+                              onChange={(e) => setAppDepositPaidBack(e.target.checked)}
+                              disabled={isSavingAppDetails}
+                            />
+                            <span>Paid Back</span>
+                          </label>
+                        </div>
+                      </>
+                    )}
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                       <button
                         onClick={() => {

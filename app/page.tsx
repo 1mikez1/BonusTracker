@@ -1,13 +1,21 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Sidebar } from '@/components/Sidebar';
 import { useSupabaseData } from '@/lib/useSupabaseData';
+import { useAuth } from '@/lib/auth';
+import { getSupabaseClient } from '@/lib/supabaseClient';
 import { useMemo } from 'react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ErrorMessage } from '@/components/ErrorMessage';
 
 export default function HomePage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+  
+  // All hooks must be called before any early returns
   const { data: clients, isLoading: clientsLoading, error: clientsError } = useSupabaseData({ table: 'clients' });
   const { data: clientApps, isLoading: appsLoading, error: appsError } = useSupabaseData({ table: 'client_apps' });
   const { data: debts, isLoading: debtsLoading, error: debtsError } = useSupabaseData({ table: 'referral_link_debts' });
@@ -76,6 +84,49 @@ export default function HomePage() {
       pendingLinks: unusedLinks.length
     };
   }, [clientApps, apps, promotions, paymentLinks]);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      const client = getSupabaseClient();
+      if (client) {
+        // Supabase is configured, redirect to login
+        router.push('/login?redirect=/');
+      }
+      // If Supabase is not configured, allow access in demo mode
+    }
+  }, [user, authLoading, router]);
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        backgroundColor: '#f8fafc'
+      }}>
+        <LoadingSpinner message="Checking authentication..." />
+      </div>
+    );
+  }
+
+  // Don't render content if not authenticated (redirect will happen)
+  const client = getSupabaseClient();
+  if (!user && client) {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        backgroundColor: '#f8fafc'
+      }}>
+        <LoadingSpinner message="Redirecting to login..." />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

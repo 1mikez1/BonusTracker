@@ -27,14 +27,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [user, loading, router, pathname]);
 
-  // Show loading while checking auth
+  // Show loading while checking auth - don't show sidebar or content
   if (loading) {
     return (
-      <div className="layout">
-        <Sidebar />
-        <main className="main">
-          <LoadingSpinner message="Checking authentication..." />
-        </main>
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        backgroundColor: '#f8fafc'
+      }}>
+        <LoadingSpinner message="Checking authentication..." />
       </div>
     );
   }
@@ -44,8 +47,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const client = getSupabaseClient();
   const showEnvWarning = !client;
   
+  // If not authenticated and Supabase is configured, show loading while redirecting
   if (!user && client) {
-    return null;
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        backgroundColor: '#f8fafc'
+      }}>
+        <LoadingSpinner message="Redirecting to login..." />
+      </div>
+    );
   }
 
   return (

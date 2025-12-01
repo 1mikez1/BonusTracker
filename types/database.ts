@@ -612,6 +612,113 @@ export type Database = {
         }
         Relationships: []
       }
+      client_partners: {
+        Row: {
+          id: string
+          name: string
+          contact_info: string | null
+          default_split_partner: number
+          default_split_owner: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          contact_info?: string | null
+          default_split_partner?: number
+          default_split_owner?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          contact_info?: string | null
+          default_split_partner?: number
+          default_split_owner?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      client_partner_assignments: {
+        Row: {
+          id: string
+          client_id: string
+          partner_id: string
+          split_partner_override: number | null
+          split_owner_override: number | null
+          notes: string | null
+          assigned_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          partner_id: string
+          split_partner_override?: number | null
+          split_owner_override?: number | null
+          notes?: string | null
+          assigned_at?: string
+        }
+        Update: {
+          id?: string
+          client_id?: string
+          partner_id?: string
+          split_partner_override?: number | null
+          split_owner_override?: number | null
+          notes?: string | null
+          assigned_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_partner_assignments_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_partner_assignments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_payments: {
+        Row: {
+          id: string
+          partner_id: string
+          amount: number
+          note: string | null
+          paid_at: string
+        }
+        Insert: {
+          id?: string
+          partner_id: string
+          amount: number
+          note?: string | null
+          paid_at?: string
+        }
+        Update: {
+          id?: string
+          partner_id?: string
+          amount?: number
+          note?: string | null
+          paid_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_payments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

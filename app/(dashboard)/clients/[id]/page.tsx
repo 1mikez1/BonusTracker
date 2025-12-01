@@ -31,6 +31,10 @@ export default function ClientDetailPage() {
   const [clientTrusted, setClientTrusted] = useState(false);
   const [clientTierId, setClientTierId] = useState('');
   const [clientInvitedBy, setClientInvitedBy] = useState('');
+  const [clientInvitedByPartner, setClientInvitedByPartner] = useState('');
+  const [clientInvitedBySearch, setClientInvitedBySearch] = useState('');
+  const [showInvitedByDropdown, setShowInvitedByDropdown] = useState(false);
+  const invitedByInputRef = useRef<HTMLInputElement>(null);
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [appNotesText, setAppNotesText] = useState('');
   const [isSavingAppNotes, setIsSavingAppNotes] = useState(false);
@@ -247,11 +251,72 @@ export default function ClientDetailPage() {
   
   const { data: allClients } = useSupabaseData({ table: 'clients' });
   
+  // Load all partners to include in Invited By dropdown
+  const { data: allPartners, mutate: mutatePartners } = useSupabaseData({ 
+    table: 'client_partners',
+    select: 'id, name',
+    order: { column: 'name', ascending: true }
+  });
+  
+  // Convert allClients to array for use in effects and components
+  const allClientsArray = Array.isArray(allClients) ? allClients : [];
+  const allPartnersArray = Array.isArray(allPartners) ? allPartners : [];
+  
+  // Filter partners for Invited By dropdown (must be before any conditional returns)
+  // Show only partners, with option to add new partner if search doesn't match
+  const filteredInvitedByPartners = useMemo(() => {
+    const results: Array<{ id: string; name: string; type: 'partner' | 'new_partner'; displayName: string }> = [];
+    
+    // Filter partners by search term if provided
+    if (clientInvitedBySearch.trim()) {
+      const searchLower = clientInvitedBySearch.toLowerCase().trim();
+      const matchingPartners = (allPartnersArray || [])
+        .filter((partner: any) => partner.name.toLowerCase().includes(searchLower))
+        .map((partner: any) => ({
+          id: `partner_${partner.id}`,
+          name: partner.name,
+          type: 'partner' as const,
+          displayName: partner.name
+        }));
+      
+      results.push(...matchingPartners);
+      
+      // If no match, add option to create new partner
+      if (matchingPartners.length === 0) {
+        results.push({
+          id: 'new_partner',
+          name: clientInvitedBySearch.trim(),
+          type: 'new_partner' as const,
+          displayName: `+ Create "${clientInvitedBySearch.trim()}"`
+        });
+      }
+    } else {
+      // If no search, return all partners
+      const allPartners = (allPartnersArray || []).map((partner: any) => ({
+        id: `partner_${partner.id}`,
+        name: partner.name,
+        type: 'partner' as const,
+        displayName: partner.name
+      }));
+      results.push(...allPartners);
+    }
+    
+    return results;
+  }, [allPartnersArray, clientInvitedBySearch]);
+  
+  // Load partner assignment for this client
+  const { data: partnerAssignments, mutate: mutatePartnerAssignments } = useSupabaseData({
+    table: 'client_partner_assignments',
+    select: '*, client_partners(*)',
+    match: clientId ? { client_id: clientId } : undefined
+  });
+  
   const { insert: insertCredential, mutate: updateCredential, remove: removeCredential } = useSupabaseMutations('credentials', undefined, mutateCredentials);
   const { insert: insertDebt, mutate: updateDebt, remove: removeDebt } = useSupabaseMutations('referral_link_debts', undefined, mutateReferralDebts);
   const { mutate: updateDepositDebt } = useSupabaseMutations('deposit_debts' as any, undefined, mutateDepositDebts);
   const { insert: insertPaymentLink, mutate: updatePaymentLink, remove: removePaymentLink } = useSupabaseMutations('payment_links', undefined, mutatePaymentLinks);
   const { insert: insertClientApp, remove: removeClientApp } = useSupabaseMutations('client_apps', undefined, mutateClientApps);
+  const { insert: insertPartner } = useSupabaseMutations('client_partners', undefined, mutatePartners);
   
   // Client errors mutations - using direct Supabase client since client_errors might not be in types
   const insertClientError = async (errorData: any, options?: { onSuccess?: () => void; onError?: (error: any) => void }) => {
@@ -523,9 +588,33 @@ export default function ClientDetailPage() {
       setClientEmail(client.email || '');
       setClientTrusted(client.trusted || false);
       setClientTierId(client.tier_id || '');
-      setClientInvitedBy(client.invited_by_client_id || '');
+      // Handle invited_by_client_id
+      const invitedById = client.invited_by_client_id ? String(client.invited_by_client_id) : '';
+      setClientInvitedBy(invitedById);
+      // Handle invited_by_partner_id
+      const invitedByPartnerId = (client as any).invited_by_partner_id ? String((client as any).invited_by_partner_id) : '';
+      setClientInvitedByPartner(invitedByPartnerId);
+      
+      // Set search text based on whether it's a client or partner
+      if (invitedByPartnerId && allPartnersArray.length > 0) {
+        const partner = allPartnersArray.find((p: any) => p.id === invitedByPartnerId);
+        if (partner) {
+          setClientInvitedBySearch(partner.name);
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else if (invitedById && allClientsArray.length > 0) {
+        const invitedByClient = allClientsArray.find((c: any) => c.id === invitedById);
+        if (invitedByClient) {
+          setClientInvitedBySearch(`${invitedByClient.name} ${invitedByClient.surname || ''}`.trim());
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else {
+        setClientInvitedBySearch('');
+      }
     }
-  }, [client, isEditingClientInfo]);
+  }, [client, isEditingClientInfo, allClientsArray, allPartnersArray]);
   
   const handleSaveNotes = async () => {
     if (!clientId || !client) return;
@@ -567,7 +656,31 @@ export default function ClientDetailPage() {
       setClientEmail(client.email || '');
       setClientTrusted(client.trusted || false);
       setClientTierId(client.tier_id || '');
-      setClientInvitedBy(client.invited_by_client_id || '');
+      // Handle invited_by_client_id
+      const invitedById = client.invited_by_client_id ? String(client.invited_by_client_id) : '';
+      setClientInvitedBy(invitedById);
+      // Handle invited_by_partner_id
+      const invitedByPartnerId = (client as any).invited_by_partner_id ? String((client as any).invited_by_partner_id) : '';
+      setClientInvitedByPartner(invitedByPartnerId);
+      
+      // Set search text based on whether it's a client or partner
+      if (invitedByPartnerId && allPartnersArray.length > 0) {
+        const partner = allPartnersArray.find((p: any) => p.id === invitedByPartnerId);
+        if (partner) {
+          setClientInvitedBySearch(partner.name);
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else if (invitedById && allClientsArray.length > 0) {
+        const invitedByClient = allClientsArray.find((c: any) => c.id === invitedById);
+        if (invitedByClient) {
+          setClientInvitedBySearch(`${invitedByClient.name} ${invitedByClient.surname || ''}`.trim());
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else {
+        setClientInvitedBySearch('');
+      }
       setIsEditingClientInfo(true);
     }
   };
@@ -584,14 +697,26 @@ export default function ClientDetailPage() {
         email: clientEmail.trim() || null,
         trusted: clientTrusted,
         tier_id: clientTierId || null,
-        invited_by_client_id: clientInvitedBy || null
+        // Set invited_by_client_id or invited_by_partner_id based on selection
+        // Only one can be set at a time - if partner is set, clear client, and vice versa
+        invited_by_client_id: clientInvitedByPartner ? null : (clientInvitedBy && clientInvitedBy.trim() !== '' ? clientInvitedBy.trim() : null),
+        invited_by_partner_id: clientInvitedBy ? null : (clientInvitedByPartner && clientInvitedByPartner.trim() !== '' ? clientInvitedByPartner.trim() : null)
       };
+      
+      console.log('Saving client info:', {
+        clientInvitedBy,
+        clientInvitedByPartner,
+        invited_by_client_id: updateData.invited_by_client_id,
+        invited_by_partner_id: updateData.invited_by_partner_id
+      });
       
       await updateClient(updateData, clientId, {
         onSuccess: () => {
           setIsEditingClientInfo(false);
           setIsSavingClientInfo(false);
           mutateClients();
+          // Refresh partner assignments since they may have been auto-created by the trigger
+          mutatePartnerAssignments();
         },
         onError: (error) => {
           console.error('Error updating client info:', error);
@@ -614,8 +739,95 @@ export default function ClientDetailPage() {
       setClientEmail(client.email || '');
       setClientTrusted(client.trusted || false);
       setClientTierId(client.tier_id || '');
-      setClientInvitedBy(client.invited_by_client_id || '');
+      // Handle invited_by_client_id
+      const invitedById = client.invited_by_client_id ? String(client.invited_by_client_id) : '';
+      setClientInvitedBy(invitedById);
+      // Handle invited_by_partner_id
+      const invitedByPartnerId = (client as any).invited_by_partner_id ? String((client as any).invited_by_partner_id) : '';
+      setClientInvitedByPartner(invitedByPartnerId);
+      
+      // Set search text based on whether it's a client or partner
+      if (invitedByPartnerId && allPartnersArray.length > 0) {
+        const partner = allPartnersArray.find((p: any) => p.id === invitedByPartnerId);
+        if (partner) {
+          setClientInvitedBySearch(partner.name);
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else if (invitedById && allClientsArray.length > 0) {
+        const invitedByClient = allClientsArray.find((c: any) => c.id === invitedById);
+        if (invitedByClient) {
+          setClientInvitedBySearch(`${invitedByClient.name} ${invitedByClient.surname || ''}`.trim());
+        } else {
+          setClientInvitedBySearch('');
+        }
+      } else {
+        setClientInvitedBySearch('');
+      }
+      setShowInvitedByDropdown(false);
       setIsEditingClientInfo(false);
+    }
+  };
+  
+  const handleSelectInvitedByClient = async (selectedId: string, displayName: string) => {
+    // Check if this is a new partner to create
+    if (selectedId === 'new_partner') {
+      // Extract partner name from displayName (could be "Create \"name\"" or "+ Create \"name\"")
+      let partnerName = displayName.replace(/^\+?\s*Create\s*"/, '').replace(/"$/, '').trim();
+      // If that didn't work, use the search text directly
+      if (!partnerName || partnerName === displayName) {
+        partnerName = clientInvitedBySearch.trim();
+      }
+      if (!partnerName) {
+        setShowInvitedByDropdown(false);
+        return;
+      }
+      
+      try {
+        // Create new partner
+        await insertPartner(
+          {
+            name: partnerName,
+            default_split_partner: 0.5, // Default 50/50 split
+            default_split_owner: 0.5,
+            contact_info: null,
+            notes: null
+          },
+          {
+            onSuccess: (newPartner: any) => {
+              // Set the newly created partner
+              setClientInvitedByPartner(newPartner.id);
+              setClientInvitedBy('');
+              setClientInvitedBySearch(partnerName);
+              setShowInvitedByDropdown(false);
+              // Refresh partners list
+              mutatePartners();
+            },
+            onError: (error) => {
+              console.error('Error creating partner:', error);
+              alert(`Failed to create partner "${partnerName}". Please try again.`);
+              setShowInvitedByDropdown(false);
+            }
+          }
+        );
+      } catch (error: any) {
+        console.error('Error creating partner:', error);
+        alert(`Failed to create partner "${partnerName}". Please try again.`);
+        setShowInvitedByDropdown(false);
+      }
+    } else if (selectedId.startsWith('partner_')) {
+      // Existing partner selection
+      const partnerId = selectedId.replace('partner_', '');
+      setClientInvitedByPartner(partnerId);
+      setClientInvitedBy('');
+      setClientInvitedBySearch(displayName);
+      setShowInvitedByDropdown(false);
+    } else {
+      // This shouldn't happen now, but handle it just in case
+      setClientInvitedBy(selectedId);
+      setClientInvitedByPartner('');
+      setClientInvitedBySearch(displayName);
+      setShowInvitedByDropdown(false);
     }
   };
   
@@ -1265,10 +1477,41 @@ export default function ClientDetailPage() {
       }
     } else if (deleteModal.type === 'client' && deleteModal.id) {
       try {
-        // First, delete or unlink related requests (they don't have CASCADE)
         const supabase = getSupabaseClient();
-        if (supabase) {
-          // Delete requests associated with this client
+        if (!supabase) {
+          setToast({
+            isOpen: true,
+            message: 'Unable to delete client. Please try again.',
+            type: 'error'
+          });
+          setDeleteModal({ isOpen: false, type: null, id: null });
+          return;
+        }
+
+        // First, set all invited_by_client_id references to NULL for clients that reference this client
+        const { error: invitedByClientError } = await supabase
+          .from('clients')
+          .update({ invited_by_client_id: null })
+          .eq('invited_by_client_id', deleteModal.id);
+        
+        if (invitedByClientError) {
+          console.warn('Error updating invited_by_client_id references (non-fatal):', invitedByClientError);
+          // Continue anyway - might be permission issue
+        }
+        
+        // Also set all invited_by_partner_id references to NULL (though this shouldn't be necessary for client deletion)
+        // This is just for safety
+        const { error: invitedByPartnerError } = await supabase
+          .from('clients')
+          .update({ invited_by_partner_id: null } as any)
+          .eq('invited_by_partner_id', deleteModal.id);
+        
+        if (invitedByPartnerError) {
+          console.warn('Error updating invited_by_partner_id references (non-fatal):', invitedByPartnerError);
+          // Continue anyway - might be permission issue
+        }
+
+        // Delete requests associated with this client (they don't have CASCADE)
           const { error: requestsError } = await supabase
             .from('requests')
             .delete()
@@ -1277,7 +1520,6 @@ export default function ClientDetailPage() {
           if (requestsError) {
             console.warn('Error deleting requests (non-fatal):', requestsError);
             // Continue anyway - might be permission issue or requests might not exist
-          }
         }
         
         // Delete client - this will cascade delete all related records (client_apps, credentials, etc.)
@@ -1778,7 +2020,26 @@ export default function ClientDetailPage() {
   }
 
   const clientTier = (client as any).tiers;
-  const invitedBy = (client as any).clients;
+  // Handle invited_by relationship - check both partner and client separately
+  const invitedByClientId = client?.invited_by_client_id;
+  const invitedByPartnerId = (client as any)?.invited_by_partner_id;
+  
+  // Get invited by client if client_id is set
+  const invitedByClient = invitedByClientId 
+    ? (Array.isArray(allClients) ? allClients.find((c: any) => c.id === invitedByClientId) : null)
+    : null;
+  
+  // Get invited by partner if partner_id is set (directly from partner table, not through client)
+  const invitedByPartner = invitedByPartnerId
+    ? (allPartnersArray.find((p: any) => p.id === invitedByPartnerId) || null)
+    : null;
+  
+  // Use partner if set, otherwise use client
+  const invitedBy = invitedByPartner
+    ? { name: invitedByPartner.name, surname: '', isPartner: true }
+    : invitedByClient 
+      ? { ...invitedByClient, isPartner: false }
+      : null;
 
   // Ensure all data arrays are actually arrays
   const clientAppsArray = Array.isArray(clientApps) ? clientApps : [];
@@ -1801,8 +2062,6 @@ export default function ClientDetailPage() {
       };
     });
 
-  const allClientsArray = Array.isArray(allClients) ? allClients : [];
-  
   // Process referral_link_debts
   const referralClientDebts = referralDebtsArray
     .filter((debt: any) => debt?.creditor_client_id === client.id || debt?.debtor_client_id === client.id)
@@ -2659,33 +2918,154 @@ export default function ClientDetailPage() {
                   }}>
                     Invited By
                   </label>
-                  <select
-                    value={clientInvitedBy}
-                    onChange={(e) => setClientInvitedBy(e.target.value)}
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <input
+                      ref={invitedByInputRef}
+                      type="text"
+                      value={clientInvitedBySearch}
+                      onChange={(e) => {
+                        setClientInvitedBySearch(e.target.value);
+                        setShowInvitedByDropdown(true);
+                        // Clear selected client/partner if search doesn't match
+                        if (clientInvitedBy) {
+                          const selectedClient = allClientsArray.find((c: any) => c.id === clientInvitedBy);
+                          if (selectedClient) {
+                            const selectedName = `${selectedClient.name} ${selectedClient.surname || ''}`.trim();
+                            if (selectedName.toLowerCase() !== e.target.value.toLowerCase()) {
+                              setClientInvitedBy('');
+                            }
+                          }
+                        }
+                        if (clientInvitedByPartner) {
+                          const selectedPartner = allPartnersArray.find((p: any) => p.id === clientInvitedByPartner);
+                          if (selectedPartner) {
+                            if (selectedPartner.name.toLowerCase() !== e.target.value.toLowerCase()) {
+                              setClientInvitedByPartner('');
+                            }
+                          }
+                        }
+                      }}
+                      onFocus={() => setShowInvitedByDropdown(true)}
+                      placeholder="Search client or partner..."
                     style={{ 
                       width: '100%', 
                       padding: '0.75rem', 
-                      border: '2px solid #cbd5e1', 
+                        border: `2px solid ${(clientInvitedBy || clientInvitedByPartner) ? '#10b981' : '#cbd5e1'}`, 
                       borderRadius: '8px',
                       fontSize: '0.95rem',
                       backgroundColor: '#fff',
-                      cursor: 'pointer',
+                        cursor: isSavingClientInfo ? 'not-allowed' : 'text',
                       transition: 'border-color 0.2s',
-                      outline: 'none'
+                        outline: 'none',
+                        fontWeight: (clientInvitedBy || clientInvitedByPartner) ? '500' : '400',
+                        boxSizing: 'border-box'
                     }}
                     disabled={isSavingClientInfo}
-                    onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
-                    onBlur={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
-                  >
-                    <option value="">None</option>
-                    {Array.isArray(allClients) && allClients
-                      .filter((c: any) => c.id !== clientId)
-                      .map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {`${c.name} ${c.surname ?? ''}`.trim()}
-                        </option>
-                      ))}
-                  </select>
+                      onBlur={(e) => {
+                        // Delay to allow click on dropdown item
+                        setTimeout(() => setShowInvitedByDropdown(false), 200);
+                      }}
+                    />
+                    {(clientInvitedBy || clientInvitedByPartner) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setClientInvitedBy('');
+                          setClientInvitedByPartner('');
+                          setClientInvitedBySearch('');
+                          setShowInvitedByDropdown(false);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '0.5rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          fontSize: '1.25rem',
+                          cursor: 'pointer',
+                          color: '#64748b',
+                          padding: '0.25rem',
+                          lineHeight: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        disabled={isSavingClientInfo}
+                      >
+                        ×
+                      </button>
+                    )}
+                    {showInvitedByDropdown && filteredInvitedByPartners.length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          marginTop: '0.25rem',
+                          backgroundColor: 'white',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 1000
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        {filteredInvitedByPartners.map((item: any) => {
+                          return (
+                            <div
+                              key={item.id}
+                              onClick={() => handleSelectInvitedByClient(item.id, item.displayName)}
+                              style={{
+                                padding: '0.75rem',
+                                cursor: 'pointer',
+                                fontSize: '0.95rem',
+                                borderBottom: '1px solid #f1f5f9',
+                                transition: 'background-color 0.15s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                backgroundColor: item.type === 'new_partner' ? '#f0fdf4' : 'white'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = item.type === 'new_partner' ? '#dcfce7' : '#f8fafc';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = item.type === 'new_partner' ? '#f0fdf4' : 'white';
+                              }}
+                            >
+                              {item.type === 'new_partner' && (
+                                <span style={{ fontSize: '1rem', color: '#059669' }}>+</span>
+                              )}
+                              <span style={{ 
+                                fontWeight: item.type === 'new_partner' ? '600' : '400',
+                                color: item.type === 'new_partner' ? '#059669' : '#0f172a'
+                              }}>
+                                {item.displayName}
+                              </span>
+                              {item.type === 'partner' && (
+                                <span style={{
+                                  fontSize: '0.75rem',
+                                  color: '#059669',
+                                  fontWeight: '600',
+                                  padding: '0.125rem 0.5rem',
+                                  background: '#ecfdf5',
+                                  borderRadius: '12px'
+                                }}>
+                                  Partner
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1.5rem', borderTop: '2px solid #e2e8f0' }}>
@@ -2764,8 +3144,34 @@ export default function ClientDetailPage() {
               </div>
               <div className="detail-item" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid #e2e8f0' }}>
                 <strong>Invited by</strong>
-                <span>{invitedBy ? `${invitedBy.name} ${invitedBy.surname ?? ''}`.trim() : '—'}</span>
+                <span>
+                  {invitedBy 
+                    ? `${invitedBy.name} ${invitedBy.surname ?? ''}`.trim() + (invitedBy.isPartner ? ' (Partner)' : '')
+                    : '—'}
+                </span>
               </div>
+              {partnerAssignments && Array.isArray(partnerAssignments) && partnerAssignments.length > 0 && (
+                <div className="detail-item" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid #e2e8f0' }}>
+                  <strong>Partner</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                    {partnerAssignments.map((assignment: any) => {
+                      const partner = assignment.client_partners;
+                      if (!partner) return null;
+                      return (
+                        <Link
+                          key={assignment.id}
+                          href={`/partners/${partner.id}`}
+                          style={{ color: '#059669', fontWeight: '600', textDecoration: 'none' }}
+                          onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                          onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                        >
+                          {partner.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="detail-item" style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.5rem' }}>
                 <strong>Joined</strong>
                 <span>{new Date(client.created_at).toLocaleDateString()}</span>
@@ -4761,11 +5167,11 @@ export default function ClientDetailPage() {
                           </>
                         ) : (
                           <>
-                            {isCreditor ? 'Creditor' : 'Debtor'}
-                            {otherParty && (
-                              <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
-                                with {otherParty.name} {otherParty.surname ?? ''}
-                              </div>
+                        {isCreditor ? 'Creditor' : 'Debtor'}
+                        {otherParty && (
+                          <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
+                            with {otherParty.name} {otherParty.surname ?? ''}
+                          </div>
                             )}
                           </>
                         )}
@@ -4780,34 +5186,34 @@ export default function ClientDetailPage() {
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           {!isDepositDebt && (
                             <>
-                              <button
-                                onClick={() => handleEditDebt(debt)}
-                                style={{
-                                  padding: '0.25rem 0.5rem',
-                                  backgroundColor: '#3b82f6',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.8rem'
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteDebt(debt)}
-                                style={{
-                                  padding: '0.25rem 0.5rem',
-                                  backgroundColor: '#ef4444',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.8rem'
-                                }}
-                              >
-                                Delete
-                              </button>
+                          <button
+                            onClick={() => handleEditDebt(debt)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem'
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDebt(debt)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem'
+                            }}
+                          >
+                            Delete
+                          </button>
                             </>
                           )}
                           {isDepositDebt && debt.status !== 'settled' && (

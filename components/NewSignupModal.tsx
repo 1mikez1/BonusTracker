@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { useSupabaseMutations } from '@/lib/useSupabaseMutations';
@@ -44,7 +44,11 @@ export function NewSignupModal({
   const [fullName, setFullName] = useState('');
   const [contact, setContact] = useState('');
   const [email, setEmail] = useState('');
-  const [invitedByClientId, setInvitedByClientId] = useState('');
+  const [invitedByPartnerId, setInvitedByPartnerId] = useState('');
+  const [invitedByPartnerSearch, setInvitedByPartnerSearch] = useState('');
+  const [showInvitedByPartnerDropdown, setShowInvitedByPartnerDropdown] = useState(false);
+  const [invitedByPartnerDropdownPosition, setInvitedByPartnerDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const invitedByPartnerInputRef = useRef<HTMLInputElement>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [foundExistingClient, setFoundExistingClient] = useState<Client | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -81,6 +85,18 @@ export function NewSignupModal({
     table: 'clients',
     select: 'id, name, surname, contact, email'
   });
+
+  // Load all partners for Invited By dropdown
+  const {
+    data: allPartners,
+    mutate: mutatePartners
+  } = useSupabaseData({
+    table: 'client_partners',
+    select: 'id, name',
+    order: { column: 'name', ascending: true }
+  });
+
+  const { insert: insertPartner } = useSupabaseMutations('client_partners', undefined, mutatePartners);
 
   // Load apps
   const {
@@ -120,6 +136,119 @@ export function NewSignupModal({
     } : undefined
   });
 
+  // Convert allPartners to array
+  const allPartnersArray = Array.isArray(allPartners) ? allPartners : [];
+
+  // Filter partners for Invited By dropdown
+  const filteredInvitedByPartners = useMemo(() => {
+    const results: Array<{ id: string; name: string; type: 'partner' | 'new_partner'; displayName: string }> = [];
+    
+    // Filter partners by search term if provided
+    if (invitedByPartnerSearch.trim()) {
+      const searchLower = invitedByPartnerSearch.toLowerCase().trim();
+      const matchingPartners = allPartnersArray
+        .filter((partner: any) => partner.name.toLowerCase().includes(searchLower))
+        .map((partner: any) => ({
+          id: `partner_${partner.id}`,
+          name: partner.name,
+          type: 'partner' as const,
+          displayName: partner.name
+        }));
+      
+      results.push(...matchingPartners);
+      
+      // If no match, add option to create new partner
+      if (matchingPartners.length === 0) {
+        results.push({
+          id: 'new_partner',
+          name: invitedByPartnerSearch.trim(),
+          type: 'new_partner' as const,
+          displayName: `+ Create "${invitedByPartnerSearch.trim()}"`
+        });
+      }
+    } else {
+      // If no search, return all partners
+      const allPartnersList = allPartnersArray.map((partner: any) => ({
+        id: `partner_${partner.id}`,
+        name: partner.name,
+        type: 'partner' as const,
+        displayName: partner.name
+      }));
+      results.push(...allPartnersList);
+    }
+    
+    return results;
+  }, [allPartnersArray, invitedByPartnerSearch]);
+
+  // Update dropdown position when it opens
+  useEffect(() => {
+    if (showInvitedByPartnerDropdown && invitedByPartnerInputRef.current) {
+      const rect = invitedByPartnerInputRef.current.getBoundingClientRect();
+      setInvitedByPartnerDropdownPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width
+      });
+    }
+  }, [showInvitedByPartnerDropdown]);
+
+  const handleSelectInvitedByPartner = async (selectedId: string, displayName: string) => {
+    // Check if this is a new partner to create
+    if (selectedId === 'new_partner') {
+      const partnerName = displayName.replace('+ Create "', '').replace('"', '').trim();
+      if (!partnerName) {
+        setShowInvitedByPartnerDropdown(false);
+        return;
+      }
+      
+      try {
+        // Create new partner
+        await insertPartner(
+          {
+            name: partnerName,
+            default_split_partner: 0.5, // Default 50/50 split
+            default_split_owner: 0.5,
+            contact_info: null,
+            notes: null
+          },
+          {
+            onSuccess: (newPartner: any) => {
+              // Set the newly created partner
+              setInvitedByPartnerId(newPartner.id);
+              setInvitedByPartnerSearch(partnerName);
+              setShowInvitedByPartnerDropdown(false);
+              // Refresh partners list
+              mutatePartners();
+            },
+            onError: (error) => {
+              console.error('Error creating partner:', error);
+              setToast({
+                isOpen: true,
+                message: `Failed to create partner "${partnerName}". Please try again.`,
+                type: 'error'
+              });
+              setShowInvitedByPartnerDropdown(false);
+            }
+          }
+        );
+      } catch (error: any) {
+        console.error('Error creating partner:', error);
+        setToast({
+          isOpen: true,
+          message: `Failed to create partner "${partnerName}". Please try again.`,
+          type: 'error'
+        });
+        setShowInvitedByPartnerDropdown(false);
+      }
+    } else if (selectedId.startsWith('partner_')) {
+      // Existing partner selection
+      const partnerId = selectedId.replace('partner_', '');
+      setInvitedByPartnerId(partnerId);
+      setInvitedByPartnerSearch(displayName);
+      setShowInvitedByPartnerDropdown(false);
+    }
+  };
+
   // Check if client_app already exists for selected client and app
   // Use match instead of filters for simple equality checks
   const {
@@ -156,10 +285,11 @@ export function NewSignupModal({
   const { mutate: mutateClientApps } = useSupabaseData({ table: 'client_apps' });
   const { insert: insertClient } = useSupabaseMutations('clients', undefined, mutateClients);
   const { insert: insertClientApp } = useSupabaseMutations('client_apps', undefined, mutateClientApps);
+  const { insert: insertPartnerAssignment } = useSupabaseMutations('client_partner_assignments');
 
   // Search for existing client by contact (exact match) or name (similar)
   const searchExistingClient = async () => {
-    if (!contact.trim() || !allClients) {
+    if ((!contact.trim() && !fullName.trim()) || !allClients) {
       setFoundExistingClient(null);
       setHasSearched(true);
       return;
@@ -205,7 +335,9 @@ export function NewSignupModal({
       setFullName('');
       setContact('');
       setEmail('');
-      setInvitedByClientId('');
+      setInvitedByPartnerId('');
+      setInvitedByPartnerSearch('');
+      setShowInvitedByPartnerDropdown(false);
       setSelectedClient(null);
       setFoundExistingClient(null);
       setHasSearched(false);
@@ -247,8 +379,8 @@ export function NewSignupModal({
   };
 
   const handleCreateOrSelectClient = async () => {
-    if (!fullName.trim() || !contact.trim()) {
-      setError('Full name and contact are required');
+    if (!fullName.trim()) {
+      setError('Full name is required');
       return;
     }
 
@@ -259,7 +391,7 @@ export function NewSignupModal({
       let clientToUse: Client;
 
       if (foundExistingClient) {
-        // Use existing client
+        // Use existing client - redirect to profile
         clientToUse = foundExistingClient;
       } else {
         // Create new client
@@ -270,9 +402,10 @@ export function NewSignupModal({
         const newClient = await insertClient({
           name: firstName,
           surname: lastName,
-          contact: contact.trim(),
+          contact: contact.trim() || null,
           email: email.trim() || null,
-          invited_by_client_id: invitedByClientId.trim() || null,
+          invited_by_partner_id: invitedByPartnerId.trim() || null,
+          invited_by_client_id: null,
           trusted: false,
           tier_id: null
         } as any);
@@ -280,14 +413,20 @@ export function NewSignupModal({
         clientToUse = newClient as Client;
       }
 
-      setSelectedClient(clientToUse);
-      setStep('app-selection');
+      // Redirect to client profile instead of going to step 2
+      onClose();
+      router.push(`/clients/${clientToUse.id}`);
+      
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create/select client');
     } finally {
       setIsSaving(false);
     }
   };
+
 
   const handleSubmit = async () => {
     if (!selectedClient) {
@@ -334,8 +473,9 @@ export function NewSignupModal({
           : `Converted from request: ${initialRequestId}`;
       }
 
-      // Use appInvitedByClientId if provided, otherwise fall back to invitedByClientId from step 1
-      const finalInvitedBy = appInvitedByClientId.trim() || invitedByClientId.trim() || null;
+      // Use appInvitedByClientId if provided, otherwise fall back to invitedByPartnerId from step 1
+      // Note: appInvitedByClientId is for backward compatibility, but we now use invitedByPartnerId
+      const finalInvitedByPartnerId = invitedByPartnerId.trim() || null;
 
       // Get promotion data if a promotion is selected
       let selectedPromotion = selectedPromotionId 
@@ -378,7 +518,8 @@ export function NewSignupModal({
         app_id: selectedAppId,
         promotion_id: selectedPromotion ? selectedPromotion.id : (selectedPromotionId || null),
         referral_link_id: selectedReferralLinkId || null,
-        invited_by_client_id: finalInvitedBy || null,
+        invited_by_client_id: null,
+        invited_by_partner_id: invitedByPartnerId || null,
         status: 'requested',
         deposited: false,
         finished: false,
@@ -434,55 +575,30 @@ export function NewSignupModal({
       // Debug: Log final data being sent
       console.log('Final clientAppData being sent:', clientAppData);
 
-      await insertClientApp(clientAppData, {
-        onSuccess: () => {
-          setIsSaving(false);
-          
-          // Refresh client_apps data to show the new signup
-          mutateClientApps();
-          
-          // Get app name for the success message
-          const appName = (apps || []).find((a: any) => a.id === selectedAppId)?.name || 'the app';
-          const clientName = `${selectedClient.name}${selectedClient.surname ? ' ' + selectedClient.surname : ''}`;
-          const successMessage = `Signup created successfully for ${clientName} - ${appName}!`;
-          
-          // Store success message in sessionStorage to show in destination page
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem('signupSuccessMessage', successMessage);
-          }
-          
-          // Show toast immediately in the modal
-          setToast({
-            isOpen: true,
-            message: successMessage,
-            type: 'success'
-          });
-          
-          // Call onSuccess callback if provided (this will update data in parent pages)
-          if (onSuccess) onSuccess();
-          
-          // Navigate to client profile after a short delay to show the toast
-          setTimeout(() => {
-            // Close modal
-            onClose();
-            // Navigate to client profile
-            router.push(`/clients/${selectedClient.id}`);
-          }, 1500); // 1.5 seconds to show the toast
-        },
-        onError: (err: any) => {
-          setIsSaving(false);
-          // Handle duplicate key error specifically
-          if (err.code === '23505' || err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {
-            const appName = (apps || []).find((a: any) => a.id === selectedAppId)?.name || 'this app';
-            setError(
-              `This client already has a signup for ${appName}. ` +
-              `Please edit the existing signup from the client profile page instead.`
-            );
-          } else {
-            setError(err.message || 'Failed to create signup');
-          }
-        }
+      await insertClientApp(clientAppData);
+      setIsSaving(false);
+      mutateClientApps();
+
+      const appName = (apps || []).find((a: any) => a.id === selectedAppId)?.name || 'the app';
+      const clientName = `${selectedClient.name}${selectedClient.surname ? ' ' + selectedClient.surname : ''}`;
+      const successMessage = `Signup created successfully for ${clientName} - ${appName}!`;
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('signupSuccessMessage', successMessage);
+      }
+
+      setToast({
+        isOpen: true,
+        message: successMessage,
+        type: 'success'
       });
+
+      if (onSuccess) onSuccess();
+
+      setTimeout(() => {
+        onClose();
+        router.push(`/clients/${selectedClient.id}`);
+      }, 1500);
     } catch (err: any) {
       setIsSaving(false);
       // Handle duplicate key error specifically
@@ -525,6 +641,7 @@ export function NewSignupModal({
           width: '90%',
           maxHeight: '90vh',
           overflowY: 'auto',
+          overflowX: 'visible',
           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
         }}
         onClick={(e) => e.stopPropagation()}
@@ -585,9 +702,8 @@ export function NewSignupModal({
 
             <div style={{ marginBottom: '1rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                Contact <span style={{ color: '#ef4444' }}>*</span>
-                <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal', marginLeft: '0.5rem' }}>
-                  (Phone, Telegram, Instagram, etc.)
+                Contact <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal', marginLeft: '0.5rem' }}>
+                  (Optional - Phone, Telegram, Instagram, etc.)
                 </span>
               </label>
               <input
@@ -632,24 +748,145 @@ export function NewSignupModal({
                 }}
               />
             </div>
-
             <div style={{ marginBottom: '1rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
-                Invited By (Client ID) <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>(Optional)</span>
+                Invited By <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>(Optional)</span>
               </label>
-              <input
-                type="text"
-                value={invitedByClientId}
-                onChange={(e) => setInvitedByClientId(e.target.value)}
-                placeholder="UUID of the client who invited this person"
-                style={{
-                  width: '100%',
-                  padding: '0.5rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '6px',
-                  fontSize: '0.875rem'
-                }}
-              />
+              <div style={{ position: 'relative', width: '100%' }}>
+                <input
+                  ref={invitedByPartnerInputRef}
+                  type="text"
+                  value={invitedByPartnerSearch}
+                  onChange={(e) => {
+                    setInvitedByPartnerSearch(e.target.value);
+                    setShowInvitedByPartnerDropdown(true);
+                    // Clear selected partner if search doesn't match
+                    if (invitedByPartnerId) {
+                      const selectedPartner = allPartnersArray.find((p: any) => p.id === invitedByPartnerId);
+                      if (selectedPartner) {
+                        if (selectedPartner.name.toLowerCase() !== e.target.value.toLowerCase()) {
+                          setInvitedByPartnerId('');
+                        }
+                      }
+                    }
+                  }}
+                  onFocus={() => setShowInvitedByPartnerDropdown(true)}
+                  placeholder="Search partner..."
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    border: `2px solid ${invitedByPartnerId ? '#10b981' : '#cbd5e1'}`,
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    backgroundColor: '#fff',
+                    cursor: 'text',
+                    transition: 'border-color 0.2s',
+                    outline: 'none',
+                    fontWeight: invitedByPartnerId ? '500' : '400',
+                    boxSizing: 'border-box'
+                  }}
+                  onBlur={() => {
+                    // Delay to allow click on dropdown item
+                    setTimeout(() => setShowInvitedByPartnerDropdown(false), 200);
+                  }}
+                />
+                {invitedByPartnerId && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setInvitedByPartnerId('');
+                      setInvitedByPartnerSearch('');
+                      setShowInvitedByPartnerDropdown(false);
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '0.5rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '1.25rem',
+                      cursor: 'pointer',
+                      color: '#64748b',
+                      padding: '0.25rem',
+                      lineHeight: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+                {showInvitedByPartnerDropdown && filteredInvitedByPartners.length > 0 && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      top: `${invitedByPartnerDropdownPosition.top}px`,
+                      left: `${invitedByPartnerDropdownPosition.left}px`,
+                      width: `${invitedByPartnerDropdownPosition.width}px`,
+                      backgroundColor: 'white',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      zIndex: 10001
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    {filteredInvitedByPartners.map((item: any) => {
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleSelectInvitedByPartner(item.id, item.displayName)}
+                          style={{
+                            padding: '0.75rem',
+                            cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            borderBottom: '1px solid #f1f5f9',
+                            transition: 'background-color 0.15s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            backgroundColor: item.type === 'new_partner' ? '#f0fdf4' : 'white'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = item.type === 'new_partner' ? '#dcfce7' : '#f8fafc';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = item.type === 'new_partner' ? '#f0fdf4' : 'white';
+                          }}
+                        >
+                          {item.type === 'new_partner' && (
+                            <span style={{ fontSize: '1rem', color: '#059669' }}>+</span>
+                          )}
+                          <span style={{ 
+                            fontWeight: item.type === 'new_partner' ? '600' : '400',
+                            color: item.type === 'new_partner' ? '#059669' : '#0f172a'
+                          }}>
+                            {item.displayName}
+                          </span>
+                          {item.type === 'partner' && (
+                            <span style={{
+                              fontSize: '0.75rem',
+                              color: '#059669',
+                              fontWeight: '600',
+                              padding: '0.125rem 0.5rem',
+                              background: '#ecfdf5',
+                              borderRadius: '12px'
+                            }}>
+                              Partner
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Show search results */}
@@ -740,7 +977,7 @@ export function NewSignupModal({
               </button>
               <button
                 onClick={handleCreateOrSelectClient}
-                disabled={isSaving || !fullName.trim() || !contact.trim()}
+                disabled={isSaving || !fullName.trim()}
                 style={{
                   flex: 1,
                   padding: '0.75rem',

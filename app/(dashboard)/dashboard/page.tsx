@@ -693,20 +693,20 @@ export default function UnifiedDashboardPage() {
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
-            Clients with Errors ({clientsWithErrors.length})
-          </h2>
+          Clients with Errors ({clientsWithErrors.length})
+        </h2>
           <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
             {expandedSections.has('clients_with_errors') ? '▼' : '▶'}
           </div>
         </div>
         {expandedSections.has('clients_with_errors') && (
           <>
-            {clientsWithErrors.length === 0 ? (
-              <EmptyState
-                title="No clients with errors"
-                message="All clients are error-free!"
-              />
-            ) : (
+        {clientsWithErrors.length === 0 ? (
+          <EmptyState
+            title="No clients with errors"
+            message="All clients are error-free!"
+          />
+        ) : (
           <div style={{ 
             display: 'grid', 
             gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
@@ -803,20 +803,20 @@ export default function UnifiedDashboardPage() {
           }}
         >
           <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>
-            Recent Errors ({filteredErrors.length})
-          </h2>
+          Recent Errors ({filteredErrors.length})
+        </h2>
           <div style={{ fontSize: '1.2rem', color: '#64748b' }}>
             {expandedSections.has('recent_errors') ? '▼' : '▶'}
           </div>
         </div>
         {expandedSections.has('recent_errors') && (
           <>
-            {filteredErrors.length === 0 ? (
-              <EmptyState
-                title="No errors found"
-                message={`No ${filterSeverity === 'all' ? '' : filterSeverity} errors detected.`}
-              />
-            ) : (
+        {filteredErrors.length === 0 ? (
+          <EmptyState
+            title="No errors found"
+            message={`No ${filterSeverity === 'all' ? '' : filterSeverity} errors detected.`}
+          />
+        ) : (
           <div style={{ display: 'grid', gap: '1rem' }}>
             {filteredErrors.slice(0, 20).map((error) => {
               const clientName = error.clients 

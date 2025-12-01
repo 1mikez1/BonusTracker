@@ -11,6 +11,7 @@ const links = [
   { href: '/pipeline', label: 'Pipeline' },
   { href: '/deadlines', label: 'Deadlines' },
   { href: '/referral-links', label: 'Referral Links' },
+  { href: '/partners', label: 'Partners' },
   { href: '/debts', label: 'Debts' },
   { href: '/requests', label: 'Requests' },
   { href: '/message-templates', label: 'Message Templates' }

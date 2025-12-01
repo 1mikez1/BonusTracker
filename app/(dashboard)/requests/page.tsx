@@ -66,7 +66,6 @@ export default function RequestsPage() {
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [showAddClientForm, setShowAddClientForm] = useState(false);
   const [showNewSignupModal, setShowNewSignupModal] = useState(false);
   const [convertRequestId, setConvertRequestId] = useState<string | null>(null);
   const [convertRequestData, setConvertRequestData] = useState<any>(null);
@@ -84,16 +83,6 @@ export default function RequestsPage() {
     type: 'success'
   });
   
-  // Add client form fields
-  const [newClientName, setNewClientName] = useState('');
-  const [newClientSurname, setNewClientSurname] = useState('');
-  const [newClientContact, setNewClientContact] = useState('');
-  const [newClientEmail, setNewClientEmail] = useState('');
-  const [newClientTrusted, setNewClientTrusted] = useState(false);
-  const [newClientTierId, setNewClientTierId] = useState('');
-  const [newClientInvitedBy, setNewClientInvitedBy] = useState('');
-  const [newClientNotes, setNewClientNotes] = useState('');
-  const [isSavingClient, setIsSavingClient] = useState(false);
 
   // Helper function to check if request is from existing client
   const isExistingClientRequest = (request: any): { isExisting: boolean; clientId: string | null; matchMethod?: string } => {
@@ -1137,72 +1126,6 @@ export default function RequestsPage() {
     }
   };
 
-  const handleAddClient = async () => {
-    if (isDemo) {
-      alert('Adding clients is disabled in demo mode. Connect Supabase to enable this feature.');
-      return;
-    }
-
-    if (!newClientName.trim()) {
-      alert('Please enter a client name.');
-      return;
-    }
-
-    setIsSavingClient(true);
-    try {
-      const newClient = await insertClient({
-        name: newClientName.trim(),
-        surname: newClientSurname.trim() || null,
-        contact: newClientContact.trim() || null,
-        email: newClientEmail.trim() || null,
-        trusted: newClientTrusted,
-        tier_id: newClientTierId || null,
-        invited_by_client_id: newClientInvitedBy || null,
-        notes: newClientNotes.trim() || null
-      });
-      
-      await mutateClients();
-      
-      // Reset form
-      setNewClientName('');
-      setNewClientSurname('');
-      setNewClientContact('');
-      setNewClientEmail('');
-      setNewClientTrusted(false);
-      setNewClientTierId('');
-      setNewClientInvitedBy('');
-      setNewClientNotes('');
-      setShowAddClientForm(false);
-      
-      const clientFullName = `${newClientName}${newClientSurname ? ' ' + newClientSurname : ''}`;
-      setToast({
-        isOpen: true,
-        message: `Client "${clientFullName}" created successfully!`,
-        type: 'success'
-      });
-    } catch (error) {
-      console.error('Failed to create client:', error);
-      setToast({
-        isOpen: true,
-        message: 'Failed to create client. Please try again.',
-        type: 'error'
-      });
-    } finally {
-      setIsSavingClient(false);
-    }
-  };
-
-  const handleCancelAddClient = () => {
-    setNewClientName('');
-    setNewClientSurname('');
-    setNewClientContact('');
-    setNewClientEmail('');
-    setNewClientTrusted(false);
-    setNewClientTierId('');
-    setNewClientInvitedBy('');
-    setNewClientNotes('');
-    setShowAddClientForm(false);
-  };
 
   if (isLoading) {
     return (
@@ -1292,186 +1215,7 @@ export default function RequestsPage() {
           <option value="rejected">Rejected</option>
         </select>
         <input placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
-        <button
-          onClick={() => setShowAddClientForm(!showAddClientForm)}
-          style={{
-            padding: '0.5rem 1rem',
-            fontSize: '0.875rem',
-            background: '#10b981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontWeight: '500',
-            marginLeft: 'auto'
-          }}
-        >
-          {showAddClientForm ? 'Cancel' : '+ Add Client Profile'}
-        </button>
       </FiltersBar>
-      
-      {showAddClientForm && (
-        <div style={{
-          backgroundColor: '#f8fafc',
-          padding: '1.5rem',
-          borderRadius: '8px',
-          border: '1px solid #e2e8f0',
-          marginBottom: '1.5rem',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-        }}>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem', color: '#1e293b' }}>
-            Add New Client Profile
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Name *
-              </label>
-              <input
-                type="text"
-                value={newClientName}
-                onChange={(e) => setNewClientName(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-                placeholder="First name"
-                required
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Surname
-              </label>
-              <input
-                type="text"
-                value={newClientSurname}
-                onChange={(e) => setNewClientSurname(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-                placeholder="Last name"
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Contact
-              </label>
-              <input
-                type="text"
-                value={newClientContact}
-                onChange={(e) => setNewClientContact(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-                placeholder="Phone/Telegram/WhatsApp"
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Email
-              </label>
-              <input
-                type="email"
-                value={newClientEmail}
-                onChange={(e) => setNewClientEmail(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-                placeholder="email@example.com"
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Tier
-              </label>
-              <select
-                value={newClientTierId}
-                onChange={(e) => setNewClientTierId(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-              >
-                <option value="">Select tier</option>
-                {Array.isArray(tiers) && tiers.map((tier: any) => (
-                  <option key={tier.id} value={tier.id}>{tier.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Invited By
-              </label>
-              <select
-                value={newClientInvitedBy}
-                onChange={(e) => setNewClientInvitedBy(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem' }}
-                disabled={isSavingClient}
-              >
-                <option value="">Select client</option>
-                {Array.isArray(clients) && clients.map((client: any) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name}{client.surname ? ` ${client.surname}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ gridColumn: 'span 2' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500' }}>
-                Notes
-              </label>
-              <textarea
-                value={newClientNotes}
-                onChange={(e) => setNewClientNotes(e.target.value)}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.875rem', minHeight: '80px', resize: 'vertical' }}
-                disabled={isSavingClient}
-                placeholder="Internal notes about this client"
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input
-                type="checkbox"
-                id="newClientTrusted"
-                checked={newClientTrusted}
-                onChange={(e) => setNewClientTrusted(e.target.checked)}
-                disabled={isSavingClient}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-              />
-              <label htmlFor="newClientTrusted" style={{ fontSize: '0.875rem', cursor: 'pointer' }}>
-                Trusted client
-              </label>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-            <button
-              onClick={handleCancelAddClient}
-              disabled={isSavingClient}
-              style={{
-                padding: '0.5rem 1rem',
-                fontSize: '0.875rem',
-                background: 'white',
-                color: '#64748b',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                cursor: isSavingClient ? 'not-allowed' : 'pointer',
-                fontWeight: '500'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAddClient}
-              disabled={isSavingClient || !newClientName.trim()}
-              style={{
-                padding: '0.5rem 1rem',
-                fontSize: '0.875rem',
-                background: isSavingClient || !newClientName.trim() ? '#94a3b8' : '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: isSavingClient || !newClientName.trim() ? 'not-allowed' : 'pointer',
-                fontWeight: '500'
-              }}
-            >
-              {isSavingClient ? 'Creating...' : 'Create Client'}
-            </button>
-          </div>
-        </div>
-      )}
       {!Array.isArray(requests) || filteredRows.length === 0 ? (
         <EmptyState
           title="No requests found"

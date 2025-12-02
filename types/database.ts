@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           app_type: string | null
           country: string | null
+          deadline_days: number
           id: string
           is_active: boolean
           name: string
@@ -26,6 +27,7 @@ export type Database = {
         Insert: {
           app_type?: string | null
           country?: string | null
+          deadline_days?: number
           id?: string
           is_active?: boolean
           name: string
@@ -34,6 +36,7 @@ export type Database = {
         Update: {
           app_type?: string | null
           country?: string | null
+          deadline_days?: number
           id?: string
           is_active?: boolean
           name?: string
@@ -50,10 +53,14 @@ export type Database = {
           created_at: string
           deadline_at: string | null
           deposit_amount: number | null
+          deposit_paid_back: boolean
+          deposit_paid_back_at: string | null
+          deposit_source: string | null
           deposited: boolean
           finished: boolean
           id: string
           invited_by_client_id: string | null
+          is_our_deposit: boolean
           notes: string | null
           profit_client: number | null
           profit_us: number | null
@@ -70,10 +77,14 @@ export type Database = {
           created_at?: string
           deadline_at?: string | null
           deposit_amount?: number | null
+          deposit_paid_back?: boolean
+          deposit_paid_back_at?: string | null
+          deposit_source?: string | null
           deposited?: boolean
           finished?: boolean
           id?: string
           invited_by_client_id?: string | null
+          is_our_deposit?: boolean
           notes?: string | null
           profit_client?: number | null
           profit_us?: number | null
@@ -90,10 +101,14 @@ export type Database = {
           created_at?: string
           deadline_at?: string | null
           deposit_amount?: number | null
+          deposit_paid_back?: boolean
+          deposit_paid_back_at?: string | null
+          deposit_source?: string | null
           deposited?: boolean
           finished?: boolean
           id?: string
           invited_by_client_id?: string | null
+          is_our_deposit?: boolean
           notes?: string | null
           profit_client?: number | null
           profit_us?: number | null
@@ -135,10 +150,152 @@ export type Database = {
             foreignKeyName: "client_apps_referral_link_id_fkey"
             columns: ["referral_link_id"]
             isOneToOne: false
+            referencedRelation: "referral_link_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_apps_referral_link_id_fkey"
+            columns: ["referral_link_id"]
+            isOneToOne: false
             referencedRelation: "referral_links"
             referencedColumns: ["id"]
           },
         ]
+      }
+      client_errors: {
+        Row: {
+          cleared_at: string | null
+          client_app_id: string | null
+          client_id: string
+          description: string | null
+          detected_at: string
+          error_type: string
+          id: string
+          metadata: Json | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          cleared_at?: string | null
+          client_app_id?: string | null
+          client_id: string
+          description?: string | null
+          detected_at?: string
+          error_type: string
+          id?: string
+          metadata?: Json | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          title: string
+        }
+        Update: {
+          cleared_at?: string | null
+          client_app_id?: string | null
+          client_id?: string
+          description?: string | null
+          detected_at?: string
+          error_type?: string
+          id?: string
+          metadata?: Json | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_errors_client_app_id_fkey"
+            columns: ["client_app_id"]
+            isOneToOne: false
+            referencedRelation: "client_apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_errors_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_partner_assignments: {
+        Row: {
+          assigned_at: string
+          client_id: string
+          id: string
+          notes: string | null
+          partner_id: string
+          split_owner_override: number | null
+          split_partner_override: number | null
+        }
+        Insert: {
+          assigned_at?: string
+          client_id: string
+          id?: string
+          notes?: string | null
+          partner_id: string
+          split_owner_override?: number | null
+          split_partner_override?: number | null
+        }
+        Update: {
+          assigned_at?: string
+          client_id?: string
+          id?: string
+          notes?: string | null
+          partner_id?: string
+          split_owner_override?: number | null
+          split_partner_override?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_partner_assignments_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_partner_assignments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_partners: {
+        Row: {
+          contact_info: string | null
+          created_at: string
+          default_split_owner: number
+          default_split_partner: number
+          id: string
+          name: string
+          notes: string | null
+        }
+        Insert: {
+          contact_info?: string | null
+          created_at?: string
+          default_split_owner?: number
+          default_split_partner?: number
+          id?: string
+          name: string
+          notes?: string | null
+        }
+        Update: {
+          contact_info?: string | null
+          created_at?: string
+          default_split_owner?: number
+          default_split_partner?: number
+          id?: string
+          name?: string
+          notes?: string | null
+        }
+        Relationships: []
       }
       clients: {
         Row: {
@@ -149,6 +306,7 @@ export type Database = {
           id: string
           invited_by_client_id: string | null
           invited_by_name: string | null
+          invited_by_partner_id: string | null
           name: string
           needs_rewrite: boolean
           notes: string | null
@@ -165,6 +323,7 @@ export type Database = {
           id?: string
           invited_by_client_id?: string | null
           invited_by_name?: string | null
+          invited_by_partner_id?: string | null
           name: string
           needs_rewrite?: boolean
           notes?: string | null
@@ -181,6 +340,7 @@ export type Database = {
           id?: string
           invited_by_client_id?: string | null
           invited_by_name?: string | null
+          invited_by_partner_id?: string | null
           name?: string
           needs_rewrite?: boolean
           notes?: string | null
@@ -195,6 +355,13 @@ export type Database = {
             columns: ["invited_by_client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_invited_by_partner_id_fkey"
+            columns: ["invited_by_partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
             referencedColumns: ["id"]
           },
           {
@@ -254,6 +421,57 @@ export type Database = {
           },
         ]
       }
+      deposit_debts: {
+        Row: {
+          amount: number
+          client_app_id: string
+          client_id: string
+          created_at: string
+          deposit_source: string | null
+          description: string | null
+          id: string
+          paid_back_at: string | null
+          status: string
+        }
+        Insert: {
+          amount: number
+          client_app_id: string
+          client_id: string
+          created_at?: string
+          deposit_source?: string | null
+          description?: string | null
+          id?: string
+          paid_back_at?: string | null
+          status?: string
+        }
+        Update: {
+          amount?: number
+          client_app_id?: string
+          client_id?: string
+          created_at?: string
+          deposit_source?: string | null
+          description?: string | null
+          id?: string
+          paid_back_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_debts_client_app_id_fkey"
+            columns: ["client_app_id"]
+            isOneToOne: true
+            referencedRelation: "client_apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_debts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           app_id: string | null
@@ -291,6 +509,93 @@ export type Database = {
             columns: ["app_id"]
             isOneToOne: false
             referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_payments: {
+        Row: {
+          amount: number
+          id: string
+          note: string | null
+          paid_at: string
+          partner_id: string
+        }
+        Insert: {
+          amount: number
+          id?: string
+          note?: string | null
+          paid_at?: string
+          partner_id: string
+        }
+        Update: {
+          amount?: number
+          id?: string
+          note?: string | null
+          paid_at?: string
+          partner_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_payments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_payments_by_client_app: {
+        Row: {
+          amount: number | null
+          client_app_id: string
+          client_id: string
+          created_at: string
+          id: string
+          note: string | null
+          paid_at: string
+          partner_id: string
+        }
+        Insert: {
+          amount?: number | null
+          client_app_id: string
+          client_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          paid_at?: string
+          partner_id: string
+        }
+        Update: {
+          amount?: number | null
+          client_app_id?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          paid_at?: string
+          partner_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_payments_by_client_app_client_app_id_fkey"
+            columns: ["client_app_id"]
+            isOneToOne: false
+            referencedRelation: "client_apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_payments_by_client_app_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_payments_by_client_app_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "client_partners"
             referencedColumns: ["id"]
           },
         ]
@@ -467,6 +772,81 @@ export type Database = {
             foreignKeyName: "referral_link_debts_referral_link_id_fkey"
             columns: ["referral_link_id"]
             isOneToOne: false
+            referencedRelation: "referral_link_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_link_debts_referral_link_id_fkey"
+            columns: ["referral_link_id"]
+            isOneToOne: false
+            referencedRelation: "referral_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_link_usages: {
+        Row: {
+          client_app_id: string | null
+          client_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          redeemed: boolean
+          redeemed_at: string | null
+          referral_link_id: string
+          used_at: string
+          used_by: string | null
+        }
+        Insert: {
+          client_app_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          redeemed?: boolean
+          redeemed_at?: string | null
+          referral_link_id: string
+          used_at?: string
+          used_by?: string | null
+        }
+        Update: {
+          client_app_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          redeemed?: boolean
+          redeemed_at?: string | null
+          referral_link_id?: string
+          used_at?: string
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_link_usages_client_app_id_fkey"
+            columns: ["client_app_id"]
+            isOneToOne: false
+            referencedRelation: "client_apps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_link_usages_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_link_usages_referral_link_id_fkey"
+            columns: ["referral_link_id"]
+            isOneToOne: false
+            referencedRelation: "referral_link_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_link_usages_referral_link_id_fkey"
+            columns: ["referral_link_id"]
+            isOneToOne: false
             referencedRelation: "referral_links"
             referencedColumns: ["id"]
           },
@@ -474,34 +854,52 @@ export type Database = {
       }
       referral_links: {
         Row: {
+          account_name: string | null
           app_id: string
+          code: string | null
           current_uses: number
           id: string
           is_active: boolean
+          last_used_at: string | null
           max_uses: number | null
+          normalized_url: string | null
           notes: string | null
           owner_client_id: string | null
+          status: Database["public"]["Enums"]["referral_link_status"]
           url: string
+          url_validation_status: Database["public"]["Enums"]["url_validation_status"]
         }
         Insert: {
+          account_name?: string | null
           app_id: string
+          code?: string | null
           current_uses?: number
           id?: string
           is_active?: boolean
+          last_used_at?: string | null
           max_uses?: number | null
+          normalized_url?: string | null
           notes?: string | null
           owner_client_id?: string | null
+          status?: Database["public"]["Enums"]["referral_link_status"]
           url: string
+          url_validation_status?: Database["public"]["Enums"]["url_validation_status"]
         }
         Update: {
+          account_name?: string | null
           app_id?: string
+          code?: string | null
           current_uses?: number
           id?: string
           is_active?: boolean
+          last_used_at?: string | null
           max_uses?: number | null
+          normalized_url?: string | null
           notes?: string | null
           owner_client_id?: string | null
+          status?: Database["public"]["Enums"]["referral_link_status"]
           url?: string
+          url_validation_status?: Database["public"]["Enums"]["url_validation_status"]
         }
         Relationships: [
           {
@@ -525,37 +923,49 @@ export type Database = {
           client_id: string | null
           contact: string | null
           created_at: string
+          email: string | null
           external_form_id: string | null
           id: string
           name: string
           notes: string | null
           processed_at: string | null
+          request_type: string | null
           requested_apps_raw: string | null
           status: Database["public"]["Enums"]["request_status"]
+          webhook_payload: Json | null
+          webhook_source: string | null
         }
         Insert: {
           client_id?: string | null
           contact?: string | null
           created_at?: string
+          email?: string | null
           external_form_id?: string | null
           id?: string
           name: string
           notes?: string | null
           processed_at?: string | null
+          request_type?: string | null
           requested_apps_raw?: string | null
           status?: Database["public"]["Enums"]["request_status"]
+          webhook_payload?: Json | null
+          webhook_source?: string | null
         }
         Update: {
           client_id?: string | null
           contact?: string | null
           created_at?: string
+          email?: string | null
           external_form_id?: string | null
           id?: string
           name?: string
           notes?: string | null
           processed_at?: string | null
+          request_type?: string | null
           requested_apps_raw?: string | null
           status?: Database["public"]["Enums"]["request_status"]
+          webhook_payload?: Json | null
+          webhook_source?: string | null
         }
         Relationships: [
           {
@@ -612,119 +1022,114 @@ export type Database = {
         }
         Relationships: []
       }
-      client_partners: {
-        Row: {
-          id: string
-          name: string
-          contact_info: string | null
-          default_split_partner: number
-          default_split_owner: number
-          notes: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          contact_info?: string | null
-          default_split_partner?: number
-          default_split_owner?: number
-          notes?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          contact_info?: string | null
-          default_split_partner?: number
-          default_split_owner?: number
-          notes?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      client_partner_assignments: {
-        Row: {
-          id: string
-          client_id: string
-          partner_id: string
-          split_partner_override: number | null
-          split_owner_override: number | null
-          notes: string | null
-          assigned_at: string
-        }
-        Insert: {
-          id?: string
-          client_id: string
-          partner_id: string
-          split_partner_override?: number | null
-          split_owner_override?: number | null
-          notes?: string | null
-          assigned_at?: string
-        }
-        Update: {
-          id?: string
-          client_id?: string
-          partner_id?: string
-          split_partner_override?: number | null
-          split_owner_override?: number | null
-          notes?: string | null
-          assigned_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "client_partner_assignments_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "client_partner_assignments_partner_id_fkey"
-            columns: ["partner_id"]
-            isOneToOne: false
-            referencedRelation: "client_partners"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      partner_payments: {
-        Row: {
-          id: string
-          partner_id: string
-          amount: number
-          note: string | null
-          paid_at: string
-        }
-        Insert: {
-          id?: string
-          partner_id: string
-          amount: number
-          note?: string | null
-          paid_at?: string
-        }
-        Update: {
-          id?: string
-          partner_id?: string
-          amount?: number
-          note?: string | null
-          paid_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "partner_payments_partner_id_fkey"
-            columns: ["partner_id"]
-            isOneToOne: false
-            referencedRelation: "client_partners"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
-      [_ in never]: never
+      referral_link_stats: {
+        Row: {
+          account_name: string | null
+          app_id: string | null
+          app_name: string | null
+          code: string | null
+          current_uses: number | null
+          id: string | null
+          is_active: boolean | null
+          last_used_at: string | null
+          max_uses: number | null
+          normalized_url: string | null
+          redeemed_count: number | null
+          status: Database["public"]["Enums"]["referral_link_status"] | null
+          unique_clients: number | null
+          unredeemed_count: number | null
+          url: string | null
+          url_validation_status:
+            | Database["public"]["Enums"]["url_validation_status"]
+            | null
+          uses_last_30_days: number | null
+          uses_last_7_days: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_links_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      calculate_client_app_deadline: {
+        Args: { p_client_app_id: string }
+        Returns: string
+      }
+      check_and_assign_partners: {
+        Args: never
+        Returns: {
+          assigned: boolean
+          client_id: string
+          client_name: string
+          partner_id: string
+          partner_name: string
+        }[]
+      }
+      compute_partner_split_for_client: {
+        Args: { in_partner_id: string }
+        Returns: {
+          client_id: string
+          client_name: string
+          owner_share: number
+          partner_share: number
+          total_profit_us: number
+        }[]
+      }
+      detect_all_client_errors: { Args: never; Returns: number }
+      detect_client_errors: { Args: { p_client_id: string }; Returns: number }
+      extract_referral_code: { Args: { p_url: string }; Returns: string }
+      find_client_by_name: { Args: { customer_name: string }; Returns: string }
+      get_app_to_keep: { Args: { normalized_name: string }; Returns: string }
+      get_clients_by_partner: {
+        Args: {
+          in_limit?: number
+          in_offset?: number
+          in_order_by?: string
+          in_order_dir?: string
+          in_partner_id?: string
+          in_partner_name_search?: string
+          in_search?: string
+        }
+        Returns: {
+          contact: string
+          created_at: string
+          email: string
+          id: string
+          invited_by_client_id: string
+          invited_by_partner_id: string
+          name: string
+          notes: string
+          partner_id: string
+          partner_name: string
+          surname: string
+          tier_id: string
+          total_apps: number
+          total_profit_us: number
+          trusted: boolean
+        }[]
+      }
+      normalize_referral_url: { Args: { p_url: string }; Returns: string }
+      parse_dd_mm_date: {
+        Args: { date_str: string; default_year?: number }
+        Returns: string
+      }
+      update_all_deadlines: { Args: never; Returns: number }
+      update_referral_link_stats: {
+        Args: { p_referral_link_id: string }
+        Returns: undefined
+      }
+      validate_referral_url: {
+        Args: { p_url: string }
+        Returns: Database["public"]["Enums"]["url_validation_status"]
+      }
     }
     Enums: {
       client_app_status:
@@ -735,8 +1140,25 @@ export type Database = {
         | "completed"
         | "paid"
         | "cancelled"
+      error_type:
+        | "document_rejected"
+        | "deadline_missed"
+        | "referral_incoherent"
+        | "missing_steps"
+        | "note_error"
+        | "csv_import_incoherent"
+        | "missing_deposit"
+        | "stale_update"
+        | "status_mismatch"
       referral_link_debt_status: "open" | "partial" | "settled"
-      request_status: "new" | "contacted" | "converted" | "rejected"
+      referral_link_status: "active" | "inactive" | "redeemed" | "expired"
+      request_status:
+        | "new"
+        | "contacted"
+        | "converted"
+        | "rejected"
+        | "scheduled"
+      url_validation_status: "valid" | "invalid" | "needs_review" | "pending"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -824,7 +1246,7 @@ export type TablesUpdate<
         Update: infer U
       }
       ? U
-      : never
+    : never
     : never
 
 export type Enums<
@@ -873,8 +1295,27 @@ export const Constants = {
         "paid",
         "cancelled",
       ],
+      error_type: [
+        "document_rejected",
+        "deadline_missed",
+        "referral_incoherent",
+        "missing_steps",
+        "note_error",
+        "csv_import_incoherent",
+        "missing_deposit",
+        "stale_update",
+        "status_mismatch",
+      ],
       referral_link_debt_status: ["open", "partial", "settled"],
-      request_status: ["new", "contacted", "converted", "rejected"],
+      referral_link_status: ["active", "inactive", "redeemed", "expired"],
+      request_status: [
+        "new",
+        "contacted",
+        "converted",
+        "rejected",
+        "scheduled",
+      ],
+      url_validation_status: ["valid", "invalid", "needs_review", "pending"],
     },
   },
 } as const

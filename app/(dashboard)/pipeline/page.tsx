@@ -21,11 +21,13 @@ interface ClientAppItem {
   app_id: string;
   status: string;
   deposit_amount: string | null;
+  profit_us: string | null;
   notes: string | null;
   clientName: string;
   appName: string;
   clients?: any;
   apps?: any;
+  promotions?: any | any[];
 }
 
 export default function PipelinePage() {
@@ -37,7 +39,7 @@ export default function PipelinePage() {
     isDemo
   } = useSupabaseData({
     table: 'client_apps',
-    select: '*, apps(*), clients!client_id(*)'
+    select: '*, apps(*), clients!client_id(*), promotions(*)'
   });
   
   const { mutate: updateClientApp } = useSupabaseMutations('client_apps');
@@ -553,7 +555,12 @@ export default function PipelinePage() {
                 </strong>
                 <span style={{ fontSize: '0.75rem' }}>{item.appName}</span>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
-                  <span>€{Number(item.deposit_amount ?? 0).toFixed(2)}</span>
+                  <span>€{Number(
+                    item.profit_us ?? 
+                    (Array.isArray(item.promotions) && item.promotions.length > 0 
+                      ? item.promotions[0]?.our_reward ?? 0
+                      : (item.promotions as any)?.our_reward ?? 0) ?? 0
+                  ).toFixed(2)}</span>
                   <StatusBadge status={item.status} />
                 </div>
                 {item.notes ? <span style={{ fontSize: '0.7rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.notes}</span> : null}

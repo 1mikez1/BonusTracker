@@ -42,7 +42,6 @@ export default function ClientsPage() {
     isDemo
   } = useSupabaseData({ 
     table: 'clients', 
-    order: { column: 'created_at', ascending: false },
     select: '*, tiers(*)'
   });
   
@@ -96,6 +95,8 @@ export default function ClientsPage() {
   const partnerDropdownRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [sortColumn, setSortColumn] = useState<keyof ClientRow | string>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Debounced partner search
   useEffect(() => {
@@ -240,19 +241,76 @@ export default function ClientsPage() {
     });
   }, [rows, tierFilter, trustedFilter, statusFilter, search, partnerFilter, selectedPartnerId]);
 
-  // Paginate filtered rows
-  const paginatedRows = useMemo(() => {
+  // Handle column sorting
+  const handleSort = (column: keyof ClientRow | string) => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new column and default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  // Sort and paginate filtered rows
+  const sortedAndPaginatedRows = useMemo(() => {
+    // Sort by selected column
+    const sorted = [...filteredRows].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      if (sortColumn === 'created_at') {
+        aValue = new Date(a.created_at).getTime();
+        bValue = new Date(b.created_at).getTime();
+      } else if (sortColumn === 'name') {
+        aValue = `${a.name} ${a.surname ?? ''}`.toLowerCase();
+        bValue = `${b.name} ${b.surname ?? ''}`.toLowerCase();
+      } else if (sortColumn === 'total_profit_us') {
+        aValue = a.total_profit_us;
+        bValue = b.total_profit_us;
+      } else if (sortColumn === 'total_apps') {
+        aValue = a.total_apps;
+        bValue = b.total_apps;
+      } else if (sortColumn === 'partner_name') {
+        aValue = (a.partner_name || '').toLowerCase();
+        bValue = (b.partner_name || '').toLowerCase();
+      } else if (sortColumn === 'tier_name') {
+        aValue = (a.tier_name || '').toLowerCase();
+        bValue = (b.tier_name || '').toLowerCase();
+      } else {
+        aValue = a[sortColumn as keyof ClientRow];
+        bValue = b[sortColumn as keyof ClientRow];
+      }
+      
+      // Handle null/undefined values
+      if (aValue == null && bValue == null) return 0;
+      if (aValue == null) return 1;
+      if (bValue == null) return -1;
+      
+      // Compare values
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue);
+        return sortDirection === 'asc' ? comparison : -comparison;
+      } else {
+        const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+    });
+    
+    // Paginate
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    return filteredRows.slice(startIndex, endIndex);
-  }, [filteredRows, currentPage, pageSize]);
+    return sorted.slice(startIndex, endIndex);
+  }, [filteredRows, currentPage, pageSize, sortColumn, sortDirection]);
 
   const totalPages = Math.ceil(filteredRows.length / pageSize);
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters or sort order change
   useEffect(() => {
     setCurrentPage(1);
-  }, [tierFilter, trustedFilter, statusFilter, search, partnerFilter, selectedPartnerId]);
+  }, [tierFilter, trustedFilter, statusFilter, search, partnerFilter, selectedPartnerId, sortColumn, sortDirection]);
 
   const metrics = useMemo(() => {
     const totalProfit = filteredRows.reduce((sum, row) => sum + row.total_profit_us, 0);
@@ -476,11 +534,15 @@ export default function ClientsPage() {
       ) : (
         <>
         <DataTable
-          data={paginatedRows}
-        columns={[
+          data={sortedAndPaginatedRows}
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+          columns={[
           {
             key: 'name',
             header: 'Client',
+            sortable: true,
             render: (row) => (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -509,6 +571,7 @@ export default function ClientsPage() {
           {
             key: 'partner_name',
             header: 'Partner',
+            sortable: true,
             render: (row) => row.partner_name ? (
               <Link href={`/partners/${row.partner_id}`} style={{ color: '#059669', textDecoration: 'none' }}>
                 {row.partner_name}
@@ -518,16 +581,19 @@ export default function ClientsPage() {
           {
             key: 'tier_name',
             header: 'Tier',
+            sortable: true,
             render: (row) => row.tier_name ?? '—'
           },
           {
             key: 'trusted',
             header: 'Trust',
+            sortable: false,
             render: (row) => (row.trusted ? <span className="badge success">Trusted</span> : '—')
           },
           {
             key: 'total_apps',
             header: 'Apps',
+            sortable: true,
             render: (row) => (
               <div>
                 <strong>{row.total_apps}</strong>
@@ -544,11 +610,13 @@ export default function ClientsPage() {
           {
             key: 'total_profit_us',
             header: 'Internal profit',
+            sortable: true,
             render: (row) => `€${row.total_profit_us.toFixed(2)}`
           },
           {
             key: 'created_at',
             header: 'Created',
+            sortable: true,
             render: (row) => new Date(row.created_at).toLocaleDateString()
           }
         ]}

@@ -14,6 +14,60 @@ import { EmptyState } from '@/components/EmptyState';
 import { ConfirmationModal } from '@/components/ConfirmationModal';
 import { Toast } from '@/components/Toast';
 
+// User options for deposit assignment
+const DEPOSIT_USER_OPTIONS = ['Luna', 'Marco', 'Jacopo'];
+
+// Payment source options - stored in localStorage for persistence
+const PAYMENT_SOURCE_STORAGE_KEY = 'bonus_tracker_payment_sources';
+const DEFAULT_PAYMENT_SOURCES = ['Revolut Marco', 'Revolut Jacopo', 'Revolut Luna'];
+
+// Helper function to get payment sources from localStorage
+const getPaymentSources = (): string[] => {
+  if (typeof window === 'undefined') return DEFAULT_PAYMENT_SOURCES;
+  try {
+    const stored = localStorage.getItem(PAYMENT_SOURCE_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PAYMENT_SOURCES;
+    }
+  } catch (e) {
+    console.error('Error reading payment sources from localStorage:', e);
+  }
+  return DEFAULT_PAYMENT_SOURCES;
+};
+
+// Helper function to save payment source to localStorage
+const savePaymentSource = (source: string): void => {
+  if (typeof window === 'undefined' || !source.trim()) return;
+  try {
+    const current = getPaymentSources();
+    const sourceTrimmed = source.trim();
+    if (!current.includes(sourceTrimmed)) {
+      const updated = [sourceTrimmed, ...current];
+      localStorage.setItem(PAYMENT_SOURCE_STORAGE_KEY, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.error('Error saving payment source to localStorage:', e);
+  }
+};
+
+// Helper function to delete payment source from localStorage
+const deletePaymentSource = (source: string): void => {
+  if (typeof window === 'undefined' || !source.trim()) return;
+  try {
+    const current = getPaymentSources();
+    const sourceTrimmed = source.trim();
+    // Don't allow deleting default sources
+    if (DEFAULT_PAYMENT_SOURCES.includes(sourceTrimmed)) {
+      return;
+    }
+    const updated = current.filter(s => s !== sourceTrimmed);
+    localStorage.setItem(PAYMENT_SOURCE_STORAGE_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Error deleting payment source from localStorage:', e);
+  }
+};
+
 export default function ClientDetailPage() {
   const params = useParams();
   const clientId = Array.isArray(params?.id) ? params?.id[0] : (params?.id as string | undefined);
@@ -42,6 +96,10 @@ export default function ClientDetailPage() {
   const [editingStartedAppId, setEditingStartedAppId] = useState<string | null>(null);
   const [startedDateText, setStartedDateText] = useState('');
   const [isSavingStartedDate, setIsSavingStartedDate] = useState(false);
+  const [editingCompletedAppId, setEditingCompletedAppId] = useState<string | null>(null);
+  const [completedDateText, setCompletedDateText] = useState('');
+  const [isSavingCompletedDate, setIsSavingCompletedDate] = useState(false);
+  const [showInactiveStartedApps, setShowInactiveStartedApps] = useState(false);
   
   // App details edit form fields
   const [appStatus, setAppStatus] = useState('');
@@ -53,6 +111,7 @@ export default function ClientDetailPage() {
   const [appIsOurDeposit, setAppIsOurDeposit] = useState(false);
   const [appDepositSource, setAppDepositSource] = useState('');
   const [appDepositPaidBack, setAppDepositPaidBack] = useState(false);
+  const [appErrorIrrecoverable, setAppErrorIrrecoverable] = useState(false);
   const [isSavingAppDetails, setIsSavingAppDetails] = useState(false);
   
   // Forms state
@@ -169,6 +228,21 @@ export default function ClientDetailPage() {
   const [isSavingStartApp, setIsSavingStartApp] = useState(false);
   const startAppInputRef = useRef<HTMLInputElement>(null);
   
+  // Deposit fields for "Start new app"
+  const [startAppIsOurDeposit, setStartAppIsOurDeposit] = useState(false);
+  const [startAppDepositAmount, setStartAppDepositAmount] = useState('');
+  const [startAppDepositUser, setStartAppDepositUser] = useState('');
+  const [startAppDepositUserSearch, setStartAppDepositUserSearch] = useState('');
+  const [showStartAppDepositUserDropdown, setShowStartAppDepositUserDropdown] = useState(false);
+  const startAppDepositUserInputRef = useRef<HTMLInputElement>(null);
+  const startAppDepositUserDropdownRef = useRef<HTMLDivElement>(null);
+  const [startAppPaidFrom, setStartAppPaidFrom] = useState('');
+  const [startAppPaidFromSearch, setStartAppPaidFromSearch] = useState('');
+  const [showStartAppPaidFromDropdown, setShowStartAppPaidFromDropdown] = useState(false);
+  const startAppPaidFromInputRef = useRef<HTMLInputElement>(null);
+  const startAppPaidFromDropdownRef = useRef<HTMLDivElement>(null);
+  const [paymentSources, setPaymentSources] = useState<string[]>([]);
+  
   // Toast notification state
   const [toast, setToast] = useState<{
     isOpen: boolean;
@@ -259,8 +333,8 @@ export default function ClientDetailPage() {
   });
   
   // Convert allClients to array for use in effects and components
-  const allClientsArray = Array.isArray(allClients) ? allClients : [];
-  const allPartnersArray = Array.isArray(allPartners) ? allPartners : [];
+  const allClientsArray = useMemo(() => Array.isArray(allClients) ? allClients : [], [allClients]);
+  const allPartnersArray = useMemo(() => Array.isArray(allPartners) ? allPartners : [], [allPartners]);
   
   // Filter partners for Invited By dropdown (must be before any conditional returns)
   // Show only partners, with option to add new partner if search doesn't match
@@ -527,6 +601,11 @@ export default function ClientDetailPage() {
   const error = clientsError || appsError || referralDebtsError || depositDebtsError || credentialsError || paymentLinksError;
 
   // Auto-select first available promotion when app is selected
+  // Load payment sources from localStorage on mount
+  useEffect(() => {
+    setPaymentSources(getPaymentSources());
+  }, []);
+
   useEffect(() => {
     if (startAppAppId && !startAppPromotionId && Array.isArray(allPromotions)) {
       const availablePromotions = allPromotions.filter((promo: any) => {
@@ -553,6 +632,28 @@ export default function ClientDetailPage() {
       }
     }
   }, [startAppAppId, allPromotions, startAppPromotionId]);
+
+  // Handle click outside for "Paid from" dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        startAppPaidFromDropdownRef.current &&
+        !startAppPaidFromDropdownRef.current.contains(event.target as Node) &&
+        startAppPaidFromInputRef.current &&
+        !startAppPaidFromInputRef.current.contains(event.target as Node)
+      ) {
+        setShowStartAppPaidFromDropdown(false);
+      }
+    };
+
+    if (showStartAppPaidFromDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showStartAppPaidFromDropdown]);
 
   const client = clients.find((item: any) => item.id === clientId);
   
@@ -924,6 +1025,88 @@ export default function ClientDetailPage() {
       setIsSavingStartedDate(false);
     }
   };
+
+  const handleEditCompletedDate = (appId: string, currentCompletedAt: string | null) => {
+    setEditingCompletedAppId(appId);
+    // Format date for input (YYYY-MM-DD)
+    if (currentCompletedAt) {
+      const date = new Date(currentCompletedAt);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        setCompletedDateText(`${year}-${month}-${day}`);
+      } else {
+        setCompletedDateText('');
+      }
+    } else {
+      // If no completed_at, use started_at or created_at as default
+      const app = clientApps?.find((a: any) => a.id === appId);
+      if (app) {
+        const fallbackDate = app.completed_at || app.started_at || app.created_at;
+        if (fallbackDate) {
+          const date = new Date(fallbackDate);
+          if (!isNaN(date.getTime())) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            setCompletedDateText(`${year}-${month}-${day}`);
+          } else {
+            setCompletedDateText('');
+          }
+        } else {
+          setCompletedDateText('');
+        }
+      } else {
+        setCompletedDateText('');
+      }
+    }
+  };
+
+  const handleSaveCompletedDate = async (appId: string) => {
+    setIsSavingCompletedDate(true);
+    try {
+      let completedAt: string | null = null;
+      if (completedDateText.trim()) {
+        // Parse date string (YYYY-MM-DD) and create date in local timezone
+        const [year, month, day] = completedDateText.split('-').map(Number);
+        const date = new Date(year, month - 1, day, 12, 0, 0); // Use noon to avoid timezone issues
+        if (isNaN(date.getTime())) {
+          alert('Invalid date format. Please use YYYY-MM-DD.');
+          setIsSavingCompletedDate(false);
+          return;
+        }
+        // Convert to ISO string
+        completedAt = date.toISOString();
+      } else {
+        // If empty, set to null
+        completedAt = null;
+      }
+
+      await updateClientApp(
+        { completed_at: completedAt },
+        appId,
+        {
+          onSuccess: () => {
+            setEditingCompletedAppId(null);
+            setCompletedDateText('');
+            setIsSavingCompletedDate(false);
+            // Force refresh of client apps data
+            mutateClientApps();
+          },
+          onError: (error) => {
+            console.error('Error saving completed date:', error);
+            alert('Failed to save completed date. Please try again.');
+            setIsSavingCompletedDate(false);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error saving completed date:', error);
+      alert('Failed to save completed date. Please try again.');
+      setIsSavingCompletedDate(false);
+    }
+  };
   
   const handleCancelAppEdit = () => {
     setEditingAppId(null);
@@ -954,6 +1137,7 @@ export default function ClientDetailPage() {
   };
   
   const handleEditAppDetails = (app: any) => {
+    console.log('handleEditAppDetails called with app:', app);
     setEditingAppDetailsId(app.id);
     setAppStatus(app.status);
     setAppDepositAmount(app.deposit_amount?.toString() || '');
@@ -999,13 +1183,14 @@ export default function ClientDetailPage() {
     setAppIsOurDeposit(app.is_our_deposit || false);
     setAppDepositSource(app.deposit_source || '');
     setAppDepositPaidBack(app.deposit_paid_back || false);
+    setAppErrorIrrecoverable(app.error_irrecoverable || false);
   };
   
   const handleSaveAppDetails = async (appId: string) => {
     setIsSavingAppDetails(true);
     try {
-      // Find the client app to get promotion_id
-      const clientApp = relatedApps.find((app: any) => app.id === appId);
+      // Find the client app to get promotion_id (check both relatedApps and hiddenApps)
+      const clientApp = relatedApps.find((app: any) => app.id === appId) || hiddenApps.find((app: any) => app.id === appId);
       const promotionId = clientApp?.promotion_id;
       const promotionFromApp = clientApp?.promotions; // Promotion already joined in query
       
@@ -1058,7 +1243,8 @@ export default function ClientDetailPage() {
         deposited: appDeposited,
         finished: appFinished,
         is_our_deposit: appIsOurDeposit,
-        deposit_paid_back: appDepositPaidBack
+        deposit_paid_back: appDepositPaidBack,
+        error_irrecoverable: appErrorIrrecoverable
       };
       
       if (appDepositAmount) {
@@ -1092,7 +1278,56 @@ export default function ClientDetailPage() {
       console.log('Updating app details:', { appId, updateData });
       
       await updateClientApp(updateData, appId, {
-        onSuccess: () => {
+        onSuccess: async () => {
+          // Auto-create debt if is_our_deposit is true and deposit_source contains user name or "dep mio"
+          if (appIsOurDeposit && appDepositAmount && parseFloat(appDepositAmount) > 0) {
+            const depositSourceLower = (appDepositSource || '').toLowerCase();
+            const userNames = ['io', 'luna', 'marco', 'jacopo', 'mio', 'dep mio', 'deposito mio'];
+            const containsUserName = userNames.some(name => depositSourceLower.includes(name));
+            
+            if (containsUserName || depositSourceLower.includes('dep')) {
+              try {
+                const supabase = getSupabaseClient();
+                if (supabase) {
+                  // Check if debt already exists for this client_app
+                  const { data: existingDebt } = await (supabase as any)
+                    .from('deposit_debts')
+                    .select('id')
+                    .eq('client_app_id', appId)
+                    .maybeSingle();
+                  
+                  if (!existingDebt) {
+                    // Extract user name from deposit_source or use first match
+                    let assignedTo = '';
+                    for (const name of userNames) {
+                      if (depositSourceLower.includes(name)) {
+                        assignedTo = name === 'dep mio' || name === 'deposito mio' || name === 'dep' ? 'io' : name;
+                        break;
+                      }
+                    }
+                    
+                    await (supabase as any)
+                      .from('deposit_debts')
+                      .insert({
+                        client_id: client?.id,
+                        client_app_id: appId,
+                        amount: parseFloat(appDepositAmount),
+                        deposit_source: appDepositSource || null,
+                        description: `Auto-created from app: ${clientApp?.apps?.name || 'app'}`,
+                        status: 'open',
+                        assigned_to: assignedTo || null
+                      });
+                    
+                    console.log('Auto-created deposit debt for client_app:', appId);
+                  }
+                }
+              } catch (error) {
+                console.error('Failed to auto-create deposit debt:', error);
+                // Don't fail the entire save operation if debt creation fails
+              }
+            }
+          }
+          
           setEditingAppDetailsId(null);
           setAppStatus('');
           setAppDepositAmount('');
@@ -1103,6 +1338,7 @@ export default function ClientDetailPage() {
           setAppIsOurDeposit(false);
           setAppDepositSource('');
           setAppDepositPaidBack(false);
+          setAppErrorIrrecoverable(false);
           setIsSavingAppDetails(false);
           mutateClientApps();
         },
@@ -2049,7 +2285,22 @@ export default function ClientDetailPage() {
   const paymentLinksArray = Array.isArray(paymentLinks) ? paymentLinks : [];
 
   const relatedApps = clientAppsArray
-    .filter((item: any) => item?.client_id === client.id)
+    .filter((item: any) => item?.client_id === client.id && !item?.error_irrecoverable)
+    .map((entry: any) => {
+      const app = entry?.apps;
+      const promotion = entry?.promotions;
+      const link = entry?.referral_links;
+      return {
+        ...entry,
+        app,
+        promotion,
+        link
+      };
+    });
+
+  // Apps with error_irrecoverable = true (hidden from main view)
+  const hiddenApps = clientAppsArray
+    .filter((item: any) => item?.client_id === client.id && item?.error_irrecoverable)
     .map((entry: any) => {
       const app = entry?.apps;
       const promotion = entry?.promotions;
@@ -2118,13 +2369,21 @@ export default function ClientDetailPage() {
     .filter((item) => item.status === 'paid')
     .reduce((sum, item) => sum + Number(item.deposit_amount ?? 0), 0);
   
-  // Calculate debt totals
+  // Calculate debt totals (including surplus for deposit debts)
   const totalOwedToClient = clientDebts
     .filter((debt: any) => debt.creditor_client_id === client.id && debt.status !== 'settled')
-    .reduce((sum: number, debt: any) => sum + Number(debt.amount ?? 0), 0);
+    .reduce((sum: number, debt: any) => {
+      const baseAmount = Number(debt.amount ?? 0);
+      const surplus = debt.type === 'deposit' ? Number(debt.surplus ?? 0) : 0;
+      return sum + baseAmount + surplus;
+    }, 0);
   const totalOwedByClient = clientDebts
     .filter((debt: any) => debt.debtor_client_id === client.id && debt.status !== 'settled')
-    .reduce((sum: number, debt: any) => sum + Number(debt.amount ?? 0), 0);
+    .reduce((sum: number, debt: any) => {
+      const baseAmount = Number(debt.amount ?? 0);
+      const surplus = debt.type === 'deposit' ? Number(debt.surplus ?? 0) : 0;
+      return sum + baseAmount + surplus;
+    }, 0);
   
   // Helper function to check if a promotion is currently active
   const isPromotionActive = (promo: any): boolean => {
@@ -2200,6 +2459,60 @@ export default function ClientDetailPage() {
   const appsMissing = activeAppsArray.filter((app: any) => 
     !clientAppIds.has(app.id) && appsWithActivePromotions.has(app.id)
   );
+
+  // Separate started apps into active and inactive
+  const startedApps = relatedApps.filter((item: any) => 
+    item.status !== 'completed' && item.status !== 'paid' && item.status !== 'cancelled'
+  );
+  
+  // Create a set of active app IDs for quick lookup
+  const activeAppIds = new Set(activeAppsArray.map((app: any) => app.id));
+  
+  const activeStartedApps = startedApps.filter((item: any) => {
+    // Check if the app itself is active (in activeAppsArray)
+    const appIsActive = activeAppIds.has(item.app_id);
+    
+    // If app has a promotion, check if promotion is active
+    if (item.promotion_id) {
+      const promotion = promotionsArray.find((p: any) => p.id === item.promotion_id);
+      if (promotion) {
+        // App is active if both app and promotion are active
+        return appIsActive && isPromotionActive(promotion);
+      }
+    }
+    
+    // If no promotion, app is active if the app itself is active
+    return appIsActive;
+  });
+  
+  const inactiveStartedApps = startedApps.filter((item: any) => {
+    // Check if the app itself is active (in activeAppsArray)
+    const appIsActive = activeAppIds.has(item.app_id);
+    
+    // If app has a promotion, check if promotion is active
+    if (item.promotion_id) {
+      const promotion = promotionsArray.find((p: any) => p.id === item.promotion_id);
+      if (promotion) {
+        // App is inactive if app is inactive OR promotion is inactive
+        return !appIsActive || !isPromotionActive(promotion);
+      }
+    }
+    
+    // If no promotion, app is inactive if the app itself is inactive
+    return !appIsActive;
+  });
+  
+  // Other apps (completed, paid, cancelled)
+  const otherApps = relatedApps.filter((item: any) => 
+    item.status === 'completed' || item.status === 'paid' || item.status === 'cancelled'
+  );
+  
+  // Combined apps list: active started first, then inactive started (if visible), then others
+  const sortedRelatedApps = [
+    ...activeStartedApps,
+    ...(showInactiveStartedApps ? inactiveStartedApps : []),
+    ...otherApps
+  ];
 
   return (
     <div>
@@ -2422,7 +2735,7 @@ export default function ClientDetailPage() {
                                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
                                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
                                     >
-                                      + Add custom type: "{editingErrorTypeInput}"
+                                      + Add custom type: &quot;{editingErrorTypeInput}&quot;
                                     </li>
                                   )}
                                 </ul>
@@ -3328,7 +3641,30 @@ export default function ClientDetailPage() {
 
       <section style={{ marginTop: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>Apps Started</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', margin: 0 }}>Apps Started</h2>
+            {inactiveStartedApps.length > 0 && (
+              <button
+                onClick={() => setShowInactiveStartedApps(!showInactiveStartedApps)}
+                style={{
+                  padding: '0.375rem 0.75rem',
+                  backgroundColor: showInactiveStartedApps ? '#64748b' : '#f1f5f9',
+                  color: showInactiveStartedApps ? 'white' : '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}
+                title={showInactiveStartedApps ? 'Nascondi app non attive' : 'Mostra app non attive'}
+              >
+                {showInactiveStartedApps ? '👁️' : '👁️‍🗨️'} {inactiveStartedApps.length} non attive
+              </button>
+            )}
+          </div>
           {!showStartAppForm && (
             <button
               onClick={() => setShowStartAppForm(true)}
@@ -3819,9 +4155,9 @@ export default function ClientDetailPage() {
                       fontSize: '0.85rem', 
                       color: '#64748b'
                     }}>
-                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }}></div>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
                       <span style={{ fontWeight: '600', padding: '0 0.5rem' }}>OR</span>
-                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }}></div>
+                      <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
                     </div>
                     <div>
                       <label style={{ 
@@ -3868,6 +4204,356 @@ export default function ClientDetailPage() {
                   </div>
                 </>
               )}
+              
+              {/* Deposit Information */}
+              <div style={{ 
+                padding: '1.5rem', 
+                backgroundColor: startAppIsOurDeposit ? '#fef2f2' : '#f8fafc', 
+                borderRadius: '10px',
+                border: `2px solid ${startAppIsOurDeposit ? '#ef4444' : '#e2e8f0'}`,
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem' }}>💰</span>
+                  <label style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    fontWeight: '600',
+                    fontSize: '1rem',
+                    color: '#334155',
+                    flex: 1,
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={startAppIsOurDeposit}
+                      onChange={(e) => setStartAppIsOurDeposit(e.target.checked)}
+                      disabled={isSavingStartApp}
+                      style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+                    />
+                    <span>Our Deposit <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span></span>
+                  </label>
+                  {startAppIsOurDeposit && (
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      backgroundColor: '#ef4444',
+                      color: 'white'
+                    }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+                {startAppIsOurDeposit && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+                    <div>
+                      <label style={{ 
+                        display: 'block', 
+                        marginBottom: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.9rem',
+                        color: '#334155'
+                      }}>
+                        Deposit Amount (€) <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={startAppDepositAmount}
+                        onChange={(e) => setStartAppDepositAmount(e.target.value)}
+                        placeholder="0.00"
+                        disabled={isSavingStartApp}
+                        style={{ 
+                          width: '100%', 
+                          padding: '0.875rem', 
+                          border: '2px solid #cbd5e1', 
+                          borderRadius: '8px',
+                          fontSize: '0.95rem',
+                          backgroundColor: '#fff',
+                          transition: 'border-color 0.2s'
+                        }}
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = '#3b82f6';
+                          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = '#cbd5e1';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ 
+                        display: 'block', 
+                        marginBottom: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.9rem',
+                        color: '#334155'
+                      }}>
+                        Paid by <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          ref={startAppDepositUserInputRef}
+                          type="text"
+                          value={startAppDepositUserSearch}
+                          onChange={(e) => {
+                            setStartAppDepositUserSearch(e.target.value);
+                            setShowStartAppDepositUserDropdown(true);
+                            // Update the actual value if it matches exactly
+                            const exactMatch = DEPOSIT_USER_OPTIONS.find(u => u.toLowerCase() === e.target.value.toLowerCase());
+                            if (exactMatch) {
+                              setStartAppDepositUser(exactMatch);
+                            } else {
+                              setStartAppDepositUser(e.target.value.trim());
+                            }
+                          }}
+                          onFocus={() => setShowStartAppDepositUserDropdown(true)}
+                          placeholder="Search or type name (e.g., Jacopo, Marco, Luna)..."
+                          disabled={isSavingStartApp}
+                          style={{ 
+                            width: '100%', 
+                            padding: '0.875rem', 
+                            border: '2px solid #cbd5e1', 
+                            borderRadius: '8px',
+                            fontSize: '0.95rem',
+                            backgroundColor: '#fff',
+                            transition: 'border-color 0.2s'
+                          }}
+                        />
+                        {showStartAppDepositUserDropdown && (() => {
+                          const searchLower = startAppDepositUserSearch.toLowerCase();
+                          const matching = DEPOSIT_USER_OPTIONS.filter((u: string) => u.toLowerCase().includes(searchLower));
+                          const exactMatch = DEPOSIT_USER_OPTIONS.find((u: string) => u.toLowerCase() === searchLower);
+                          const filteredUsers: Array<{ name: string; isNew?: boolean }> = exactMatch 
+                            ? matching.map((u: string) => ({ name: u }))
+                            : matching.length > 0 || !startAppDepositUserSearch.trim()
+                              ? matching.map((u: string) => ({ name: u }))
+                              : [{ name: startAppDepositUserSearch.trim(), isNew: true }, ...matching.map((u: string) => ({ name: u }))];
+                          
+                          return filteredUsers.length > 0 ? (
+                            <div
+                              ref={startAppDepositUserDropdownRef}
+                              style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                right: 0,
+                                backgroundColor: 'white',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                maxHeight: '200px',
+                                overflowY: 'auto',
+                                zIndex: 10001,
+                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                                marginTop: '0.25rem'
+                              }}
+                            >
+                              {filteredUsers.map((item: { name: string; isNew?: boolean }, idx: number) => (
+                                <div
+                                  key={idx}
+                                  onClick={() => {
+                                    setStartAppDepositUser(item.name);
+                                    setStartAppDepositUserSearch(item.name);
+                                    setShowStartAppDepositUserDropdown(false);
+                                  }}
+                                  style={{
+                                    padding: '0.75rem',
+                                    cursor: 'pointer',
+                                    borderBottom: '1px solid #e2e8f0',
+                                    backgroundColor: item.isNew ? '#f0fdf4' : 'white'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    (e.currentTarget as HTMLElement).style.backgroundColor = item.isNew ? '#dcfce7' : '#f1f5f9';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    (e.currentTarget as HTMLElement).style.backgroundColor = item.isNew ? '#f0fdf4' : 'white';
+                                  }}
+                                >
+                                  {item.isNew ? (
+                                    <span>
+                                      <span style={{ color: '#16a34a', fontWeight: '600' }}>+ Create: </span>
+                                      {item.name}
+                                    </span>
+                                  ) : (
+                                    item.name
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                        Who is responsible for this deposit? (e.g., &quot;Jacopo&quot;, &quot;Marco&quot;, &quot;Luna&quot;)
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ 
+                        display: 'block', 
+                        marginBottom: '0.5rem',
+                        fontWeight: '500',
+                        fontSize: '0.9rem',
+                        color: '#334155'
+                      }}>
+                        Paid from <span style={{ fontSize: '0.85rem', fontWeight: '400', color: '#64748b' }}>(Optional)</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          ref={startAppPaidFromInputRef}
+                          type="text"
+                          value={startAppPaidFromSearch}
+                          onChange={(e) => {
+                            setStartAppPaidFromSearch(e.target.value);
+                            setShowStartAppPaidFromDropdown(true);
+                            // Update the actual value if it matches exactly
+                            const exactMatch = paymentSources.find(s => s.toLowerCase() === e.target.value.toLowerCase());
+                            if (exactMatch) {
+                              setStartAppPaidFrom(exactMatch);
+                            } else {
+                              setStartAppPaidFrom(e.target.value.trim());
+                            }
+                          }}
+                          onFocus={() => setShowStartAppPaidFromDropdown(true)}
+                          placeholder="Search or type source (e.g., Revolut Marco, Revolut Jacopo)"
+                          disabled={isSavingStartApp}
+                          style={{ 
+                            width: '100%', 
+                            padding: '0.875rem', 
+                            border: '2px solid #cbd5e1', 
+                            borderRadius: '8px',
+                            fontSize: '0.95rem',
+                            backgroundColor: '#fff',
+                            transition: 'border-color 0.2s'
+                          }}
+                        />
+                        {showStartAppPaidFromDropdown && (() => {
+                          const searchLower = startAppPaidFromSearch.toLowerCase();
+                          const matching = paymentSources.filter((s: string) => s.toLowerCase().includes(searchLower));
+                          const exactMatch = paymentSources.find((s: string) => s.toLowerCase() === searchLower);
+                          const filteredSources: Array<{ name: string; isNew?: boolean }> = exactMatch 
+                            ? matching.map((s: string) => ({ name: s }))
+                            : matching.length > 0 || !startAppPaidFromSearch.trim()
+                              ? matching.map((s: string) => ({ name: s }))
+                              : [{ name: startAppPaidFromSearch.trim(), isNew: true }, ...matching.map((s: string) => ({ name: s }))];
+                          
+                          return filteredSources.length > 0 ? (
+                            <div
+                              ref={startAppPaidFromDropdownRef}
+                              style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                right: 0,
+                                backgroundColor: 'white',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '8px',
+                                maxHeight: '200px',
+                                overflowY: 'auto',
+                                zIndex: 10001,
+                                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                                marginTop: '0.25rem'
+                              }}
+                              onMouseDown={(e) => e.preventDefault()}
+                            >
+                              {filteredSources.map((item: { name: string; isNew?: boolean }, idx: number) => {
+                                const isDefault = DEFAULT_PAYMENT_SOURCES.includes(item.name);
+                                return (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      padding: '0.75rem',
+                                      cursor: 'pointer',
+                                      borderBottom: '1px solid #e2e8f0',
+                                      backgroundColor: item.isNew ? '#f0fdf4' : 'white',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      gap: '0.5rem'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      (e.currentTarget as HTMLElement).style.backgroundColor = item.isNew ? '#dcfce7' : '#f1f5f9';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      (e.currentTarget as HTMLElement).style.backgroundColor = item.isNew ? '#f0fdf4' : 'white';
+                                    }}
+                                  >
+                                    <div
+                                      onClick={() => {
+                                        const selectedSource = item.name;
+                                        setStartAppPaidFrom(selectedSource);
+                                        setStartAppPaidFromSearch(selectedSource);
+                                        setShowStartAppPaidFromDropdown(false);
+                                        // Save new source to localStorage if it's new
+                                        if (item.isNew) {
+                                          savePaymentSource(selectedSource);
+                                          setPaymentSources(getPaymentSources());
+                                        }
+                                      }}
+                                      style={{ flex: 1 }}
+                                    >
+                                      {item.isNew ? (
+                                        <span>
+                                          <span style={{ color: '#16a34a', fontWeight: '600' }}>+ Create: </span>
+                                          {item.name}
+                                        </span>
+                                      ) : (
+                                        item.name
+                                      )}
+                                    </div>
+                                    {!item.isNew && !isDefault && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deletePaymentSource(item.name);
+                                          setPaymentSources(getPaymentSources());
+                                          // If the deleted source was selected, clear it
+                                          if (startAppPaidFrom === item.name) {
+                                            setStartAppPaidFrom('');
+                                            setStartAppPaidFromSearch('');
+                                          }
+                                        }}
+                                        style={{
+                                          padding: '0.25rem 0.5rem',
+                                          backgroundColor: 'transparent',
+                                          border: 'none',
+                                          cursor: 'pointer',
+                                          color: '#ef4444',
+                                          fontSize: '0.875rem',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          borderRadius: '4px',
+                                          transition: 'background-color 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor = '#fee2e2';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor = 'transparent';
+                                        }}
+                                        title="Delete this option"
+                                      >
+                                        🗑️
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                        Where did the payment come from? (e.g., &quot;Revolut Marco&quot;, &quot;Revolut Jacopo&quot;, &quot;Revolut Luna&quot;)
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               
               {/* Initial Notes */}
               <div style={{ 
@@ -3947,6 +4633,14 @@ export default function ClientDetailPage() {
                     setStartAppReferralLinkId('');
                     setStartAppCustomReferralLink('');
                     setStartAppNotes('');
+                    setStartAppIsOurDeposit(false);
+                    setStartAppDepositAmount('');
+                    setStartAppDepositUser('');
+                    setStartAppDepositUserSearch('');
+                    setShowStartAppDepositUserDropdown(false);
+                    setStartAppPaidFrom('');
+                    setStartAppPaidFromSearch('');
+                    setShowStartAppPaidFromDropdown(false);
                   }}
                   disabled={isSavingStartApp}
                   style={{
@@ -3989,7 +4683,8 @@ export default function ClientDetailPage() {
                           : customRefText;
                       }
                       
-                      await insertClientApp({
+                      // Prepare client_app data
+                      const clientAppData: any = {
                         client_id: clientId,
                         app_id: startAppAppId,
                         promotion_id: startAppPromotionId || null,
@@ -3999,14 +4694,80 @@ export default function ClientDetailPage() {
                         finished: false,
                         started_at: new Date().toISOString(), // Set started_at for deadline calculation
                         notes: combinedNotes || null
-                      });
+                      };
+                      
+                      // Add deposit fields if "Our Deposit" is checked
+                      if (startAppIsOurDeposit && startAppDepositAmount && parseFloat(startAppDepositAmount) > 0) {
+                        clientAppData.is_our_deposit = true;
+                        clientAppData.deposit_amount = parseFloat(startAppDepositAmount);
+                        // Combine paid_from and paid_by in deposit_source
+                        let depositSourceParts: string[] = [];
+                        if (startAppPaidFrom.trim()) {
+                          depositSourceParts.push(`Paid from: ${startAppPaidFrom.trim()}`);
+                        }
+                        if (startAppDepositUser.trim()) {
+                          depositSourceParts.push(`Paid by: ${startAppDepositUser.trim()}`);
+                        }
+                        clientAppData.deposit_source = depositSourceParts.length > 0 ? depositSourceParts.join(', ') : null;
+                        clientAppData.deposited = true;
+                        clientAppData.status = 'deposited';
+                      }
+                      
+                      const newClientApp = await insertClientApp(clientAppData);
+                      
+                      // Auto-create debt if deposit is our deposit
+                      if (startAppIsOurDeposit && startAppDepositAmount && parseFloat(startAppDepositAmount) > 0) {
+                        try {
+                          const supabase = getSupabaseClient();
+                          if (supabase) {
+                            const clientAppId = Array.isArray(newClientApp) ? newClientApp[0]?.id : newClientApp?.id;
+                            if (clientAppId) {
+                              // Combine paid_from and paid_by for deposit_debts
+                              let debtDepositSourceParts: string[] = [];
+                              if (startAppPaidFrom.trim()) {
+                                debtDepositSourceParts.push(`Paid from: ${startAppPaidFrom.trim()}`);
+                              }
+                              if (startAppDepositUser.trim()) {
+                                debtDepositSourceParts.push(`Paid by: ${startAppDepositUser.trim()}`);
+                              }
+                              
+                              await (supabase as any)
+                                .from('deposit_debts')
+                                .insert({
+                                  client_id: clientId,
+                                  client_app_id: clientAppId,
+                                  amount: parseFloat(startAppDepositAmount),
+                                  deposit_source: debtDepositSourceParts.length > 0 ? debtDepositSourceParts.join(', ') : null,
+                                  description: `Auto-created from app: ${allAppsArray.find((a: any) => a.id === startAppAppId)?.name || 'app'}`,
+                                  status: 'open',
+                                  assigned_to: startAppDepositUser || null
+                                });
+                              
+                              console.log('Auto-created deposit debt for new client_app:', clientAppId);
+                            }
+                          }
+                        } catch (debtError) {
+                          console.error('Failed to auto-create deposit debt:', debtError);
+                          // Don't fail the entire operation if debt creation fails
+                        }
+                      }
                       
                       setShowStartAppForm(false);
                       setStartAppAppId('');
+                      setStartAppAppSearch('');
+                      setShowStartAppDropdown(false);
                       setStartAppPromotionId('');
                       setStartAppReferralLinkId('');
                       setStartAppCustomReferralLink('');
                       setStartAppNotes('');
+                      setStartAppIsOurDeposit(false);
+                      setStartAppDepositAmount('');
+                      setStartAppDepositUser('');
+                      setStartAppDepositUserSearch('');
+                      setShowStartAppDepositUserDropdown(false);
+                      setStartAppPaidFrom('');
+                      setStartAppPaidFromSearch('');
+                      setShowStartAppPaidFromDropdown(false);
                       await mutateClientApps();
                       setToast({
                         isOpen: true,
@@ -4057,18 +4818,32 @@ export default function ClientDetailPage() {
           </div>
         )}
         
-        {relatedApps.length > 0 ? (
-          <div className="status-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-            {relatedApps.map((item) => (
-              <div key={item.id} className="status-card" style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        {sortedRelatedApps.length > 0 ? (
+          <div>
+            {/* Active Started Apps Section */}
+            {activeStartedApps.length > 0 && (
+              <div style={{ marginBottom: inactiveStartedApps.length > 0 ? '2rem' : '0' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem', color: '#10b981' }}>
+                  App Attive ({activeStartedApps.length})
+                </h3>
+                <div className="status-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {activeStartedApps.map((item) => {
+                    // Find the item in relatedApps to access all properties
+                    const fullItem = relatedApps.find((a: any) => a.id === item.id) || item;
+                    return (
+              <div key={fullItem.id} className="status-card" style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'relative', zIndex: 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <strong style={{ fontSize: '1.1rem' }}>{item.app?.name ?? 'Unknown app'}</strong>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <StatusBadge status={item.status} />
-                    {editingAppDetailsId !== item.id && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end' }}>
+                  <strong style={{ fontSize: '1.1rem' }}>{fullItem.app?.name ?? 'Unknown app'}</strong>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', position: 'relative', zIndex: 10 }}>
+                    <StatusBadge status={fullItem.status} />
+                    {editingAppDetailsId !== fullItem.id && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end', position: 'relative', zIndex: 10 }}>
                         <button
-                          onClick={() => handleEditAppDetails(item)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEditAppDetails(fullItem);
+                          }}
                           style={{
                             padding: '0.25rem 0.5rem',
                             backgroundColor: '#3b82f6',
@@ -4079,14 +4854,18 @@ export default function ClientDetailPage() {
                             fontSize: '0.75rem',
                             fontWeight: '500',
                             width: '100%',
-                            minWidth: '80px'
+                            minWidth: '80px',
+                            position: 'relative',
+                            zIndex: 11,
+                            pointerEvents: 'auto'
                           }}
                           title="Edit app details"
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
                           Edit
                         </button>
                         <Link
-                          href={`/message-templates?appId=${item.app_id}&returnTo=/clients/${clientId}`}
+                          href={`/message-templates?appId=${fullItem.app_id}&returnTo=/clients/${clientId}`}
                           style={{
                             padding: '0.25rem 0.5rem',
                             backgroundColor: '#10b981',
@@ -4100,9 +4879,13 @@ export default function ClientDetailPage() {
                             display: 'inline-block',
                             width: '100%',
                             minWidth: '80px',
-                            textAlign: 'center'
+                            textAlign: 'center',
+                            position: 'relative',
+                            zIndex: 11,
+                            pointerEvents: 'auto'
                           }}
                           title="View message templates for this app"
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
                           View Messages
                         </Link>
@@ -4111,7 +4894,7 @@ export default function ClientDetailPage() {
                   </div>
                 </div>
                 
-                {editingAppDetailsId === item.id ? (
+                {editingAppDetailsId === fullItem.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Status *</label>
@@ -4146,7 +4929,7 @@ export default function ClientDetailPage() {
                       <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
                         Client Profit (€)
                         {(() => {
-                          const clientApp = relatedApps.find((a: any) => a.id === item.id);
+                          const clientApp = relatedApps.find((a: any) => a.id === fullItem.id);
                           const promotionId = clientApp?.promotion_id;
                           const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
                           const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
@@ -4240,7 +5023,7 @@ export default function ClientDetailPage() {
                         <span style={{ fontWeight: '500' }}>Our Deposit</span>
                         {!appDeposited && (
                           <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
-                            (requires "Deposited" to be checked)
+                            (requires &quot;Deposited&quot; to be checked)
                           </span>
                         )}
                       </label>
@@ -4251,7 +5034,7 @@ export default function ClientDetailPage() {
                           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
                             Deposit Source
                             <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.25rem' }}>
-                              (e.g., "Luna account", "Main wallet", "Revolut card")
+                              (e.g., &quot;Luna account&quot;, &quot;Main wallet&quot;, &quot;Revolut card&quot;)
                             </span>
                           </label>
                           <input
@@ -4276,14 +5059,29 @@ export default function ClientDetailPage() {
                         </div>
                       </>
                     )}
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                        <input
+                          type="checkbox"
+                          checked={appErrorIrrecoverable}
+                          onChange={(e) => setAppErrorIrrecoverable(e.target.checked)}
+                          disabled={isSavingAppDetails}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontWeight: '600', color: '#991b1b' }}>⚠️ Errore Irrecuperabile</span>
+                      </label>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', marginLeft: '1.5rem', fontStyle: 'italic' }}>
+                        Se selezionato, questa app verrà nascosta dalla vista del cliente
+                      </div>
+                    </div>
                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                       <button
                         onClick={() => {
                           setDeleteModal({
                             isOpen: true,
                             type: 'clientApp',
-                            id: item.id,
-                            name: item.app?.name ?? 'this app'
+                            id: fullItem.id,
+                            name: fullItem.app?.name ?? 'this app'
                           });
                         }}
                         disabled={isSavingAppDetails}
@@ -4319,7 +5117,7 @@ export default function ClientDetailPage() {
                         Cancel
                       </button>
                       <button
-                        onClick={() => handleSaveAppDetails(item.id)}
+                        onClick={() => handleSaveAppDetails(fullItem.id)}
                         disabled={isSavingAppDetails}
                         style={{
                           padding: '0.4rem 0.75rem',
@@ -4339,27 +5137,27 @@ export default function ClientDetailPage() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
-                    {item.promotion?.name && <span><strong>Promotion:</strong> {item.promotion.name}</span>}
-                    {item.link && (item.link.account_name || item.link.code || item.link.url) && (
+                    {fullItem.promotion?.name && <span><strong>Promotion:</strong> {fullItem.promotion.name}</span>}
+                    {fullItem.link && (fullItem.link.account_name || fullItem.link.code || fullItem.link.url) && (
                       <span>
-                        <strong>Referral link:</strong> {item.link.account_name || item.link.code || item.link.url}
+                        <strong>Referral link:</strong> {fullItem.link.account_name || fullItem.link.code || fullItem.link.url}
                       </span>
                     )}
                     <span><strong>Deposit:</strong> €{Number(
-                      item.deposit_amount ?? 
-                      (item.promotion?.deposit_required ?? 0)
+                      fullItem.deposit_amount ?? 
+                      (fullItem.promotion?.deposit_required ?? 0)
                     ).toFixed(2)}</span>
                     <span><strong>Client profit:</strong> €{Number(
-                      item.profit_client ?? 
-                      (item.promotion?.client_reward ?? 0)
+                      fullItem.profit_client ?? 
+                      (fullItem.promotion?.client_reward ?? 0)
                     ).toFixed(2)}</span>
                     <span><strong>Internal profit:</strong> €{Number(
-                      item.profit_us ?? 
-                      (item.promotion?.our_reward ?? 0)
+                      fullItem.profit_us ?? 
+                      (fullItem.promotion?.our_reward ?? 0)
                     ).toFixed(2)}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <strong>Started:</strong>
-                      {editingStartedAppId === item.id ? (
+                      {editingStartedAppId === fullItem.id ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
                           <input
                             type="date"
@@ -4375,7 +5173,7 @@ export default function ClientDetailPage() {
                             disabled={isSavingStartedDate}
                           />
                           <button
-                            onClick={() => handleSaveStartedDate(item.id)}
+                            onClick={() => handleSaveStartedDate(fullItem.id)}
                             disabled={isSavingStartedDate}
                             style={{
                               padding: '0.25rem 0.5rem',
@@ -4414,9 +5212,9 @@ export default function ClientDetailPage() {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span>{new Date(item.started_at || item.created_at).toLocaleDateString()}</span>
+                          <span>{new Date(fullItem.started_at || fullItem.created_at).toLocaleDateString()}</span>
                           <button
-                            onClick={() => handleEditStartedDate(item.id, item.started_at)}
+                            onClick={() => handleEditStartedDate(fullItem.id, fullItem.started_at)}
                             style={{
                               padding: '0.25rem 0.5rem',
                               backgroundColor: '#3b82f6',
@@ -4433,21 +5231,107 @@ export default function ClientDetailPage() {
                         </div>
                       )}
                     </div>
+                    {(fullItem.status === 'completed' || fullItem.status === 'paid') && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <strong>Completed:</strong>
+                        {editingCompletedAppId === fullItem.id ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                            <input
+                              type="date"
+                              value={completedDateText}
+                              onChange={(e) => setCompletedDateText(e.target.value)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                fontSize: '0.85rem',
+                                fontFamily: 'inherit'
+                              }}
+                              disabled={isSavingCompletedDate}
+                            />
+                            <button
+                              onClick={() => handleSaveCompletedDate(fullItem.id)}
+                              disabled={isSavingCompletedDate}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isSavingCompletedDate ? 'not-allowed' : 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500',
+                                opacity: isSavingCompletedDate ? 0.6 : 1
+                              }}
+                            >
+                              {isSavingCompletedDate ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingCompletedAppId(null);
+                                setCompletedDateText('');
+                              }}
+                              disabled={isSavingCompletedDate}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#64748b',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isSavingCompletedDate ? 'not-allowed' : 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500',
+                                opacity: isSavingCompletedDate ? 0.6 : 1
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>
+                              {item.completed_at 
+                                ? new Date(item.completed_at).toLocaleDateString('it-IT')
+                                : item.started_at
+                                ? new Date(item.started_at).toLocaleDateString('it-IT') + ' (using start date)'
+                                : item.created_at
+                                ? new Date(item.created_at).toLocaleDateString('it-IT') + ' (using created date)'
+                                : 'Not set'}
+                            </span>
+                            <button
+                              onClick={() => handleEditCompletedDate(item.id, item.completed_at)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500'
+                              }}
+                            >
+                              {fullItem.completed_at ? 'Edit' : 'Set'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                      {item.deposited && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Deposited</span>}
-                      {item.finished && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Finished</span>}
+                      {fullItem.deposited && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Deposited</span>}
+                      {fullItem.finished && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Finished</span>}
                     </div>
                     
                     {/* Action buttons */}
-                    {item.status === 'completed' && (
+                    {fullItem.status === 'completed' && (
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
                         <button
                           onClick={() => {
                             setDeleteModal({
                               isOpen: true,
                               type: 'markAsPaid',
-                              id: item.id,
-                              name: item.apps?.name || 'this app process'
+                              id: fullItem.id,
+                              name: fullItem.apps?.name || 'this app process'
                             });
                           }}
                           style={{
@@ -4470,9 +5354,9 @@ export default function ClientDetailPage() {
                     <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <strong>Notes:</strong>
-                        {editingAppId !== item.id && (
+                        {editingAppId !== fullItem.id && (
                           <button
-                            onClick={() => handleEditAppNotes(item.id, item.notes)}
+                            onClick={() => handleEditAppNotes(fullItem.id, fullItem.notes)}
                             style={{
                               padding: '0.25rem 0.5rem',
                               backgroundColor: '#3b82f6',
@@ -4484,12 +5368,12 @@ export default function ClientDetailPage() {
                               fontWeight: '500'
                             }}
                           >
-                            {item.notes ? 'Edit' : 'Add'}
+                            {fullItem.notes ? 'Edit' : 'Add'}
                           </button>
                         )}
                       </div>
                     
-                    {editingAppId === item.id ? (
+                    {editingAppId === fullItem.id ? (
                       <div>
                         <textarea
                           value={appNotesText}
@@ -4527,7 +5411,7 @@ export default function ClientDetailPage() {
                             Cancel
                           </button>
                           <button
-                            onClick={() => handleSaveAppNotes(item.id)}
+                            onClick={() => handleSaveAppNotes(fullItem.id)}
                             disabled={isSavingAppNotes}
                             style={{
                               padding: '0.25rem 0.75rem',
@@ -4546,10 +5430,10 @@ export default function ClientDetailPage() {
                         </div>
                       </div>
                     ) : (
-                      <span style={{ color: item.notes ? '#64748b' : '#94a3b8', fontStyle: item.notes ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
+                      <span style={{ color: fullItem.notes ? '#64748b' : '#94a3b8', fontStyle: fullItem.notes ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
                         {(() => {
                           // Remove completedSteps JSON from displayed notes
-                          let displayNotes = item.notes || '';
+                          let displayNotes = fullItem.notes || '';
                           displayNotes = displayNotes.replace(/\s*\{.*"completedSteps".*?\}\s*/g, '').trim();
                           return displayNotes || 'No notes added yet.';
                         })()}
@@ -4561,7 +5445,7 @@ export default function ClientDetailPage() {
                   {(() => {
                     // Get message templates for this app
                     const appTemplates = Array.isArray(allMessageTemplates) 
-                      ? allMessageTemplates.filter((t: any) => t.app_id === item.app_id)
+                      ? allMessageTemplates.filter((t: any) => t.app_id === fullItem.app_id)
                       : [];
                     
                     if (appTemplates.length === 0) return null;
@@ -4582,16 +5466,26 @@ export default function ClientDetailPage() {
                     // Get completed steps from completed_steps JSONB column
                     let completedSteps: Set<string> = new Set();
                     try {
-                      if (item.completed_steps && Array.isArray(item.completed_steps)) {
-                        completedSteps = new Set(item.completed_steps);
+                      if (fullItem.completed_steps && Array.isArray(fullItem.completed_steps)) {
+                        completedSteps = new Set(fullItem.completed_steps);
                       }
                     } catch (e) {
                       // Ignore parse errors
                     }
                     
+                    // If status is "completed", mark all steps as completed
+                    if (fullItem.status === 'completed' && stepOrder.length > 0) {
+                      stepOrder.forEach(step => completedSteps.add(step));
+                    }
+                    
                     // Filter to show only incomplete steps (when not editing)
                     const incompleteSteps = stepOrder.filter(step => !completedSteps.has(step));
-                    const isEditingSteps = editingSteps.has(item.id);
+                    const isEditingSteps = editingSteps.has(fullItem.id);
+                    
+                    // Hide steps section if status is "completed" and not editing
+                    if (fullItem.status === 'completed' && !isEditingSteps && incompleteSteps.length === 0) {
+                      return null;
+                    }
                     
                     // Helper function to update step completion
                     const updateStepCompletion = async (newCompletedSteps: Set<string>) => {
@@ -4600,7 +5494,7 @@ export default function ClientDetailPage() {
                       // Determine new status based on completed steps
                       const totalSteps = stepOrder.length;
                       const completedCount = completedStepsArray.length;
-                      let newStatus = item.status;
+                      let newStatus = fullItem.status;
                       
                       if (completedCount === totalSteps) {
                         // All steps completed
@@ -4614,7 +5508,7 @@ export default function ClientDetailPage() {
                         }
                       } else {
                         // No steps completed, revert to requested if was completed
-                        if (newStatus === 'completed' && !item.finished) {
+                        if (newStatus === 'completed' && !fullItem.finished) {
                           newStatus = 'requested';
                         }
                       }
@@ -4625,7 +5519,7 @@ export default function ClientDetailPage() {
                             completed_steps: completedStepsArray as any,
                             status: newStatus
                           } as any,
-                          item.id,
+                          fullItem.id,
                           {
                             onSuccess: () => {
                               mutateClientApps();
@@ -4662,9 +5556,9 @@ export default function ClientDetailPage() {
                             onClick={() => {
                               const newEditing = new Set(editingSteps);
                               if (isEditingSteps) {
-                                newEditing.delete(item.id);
+                                newEditing.delete(fullItem.id);
                               } else {
-                                newEditing.add(item.id);
+                                newEditing.add(fullItem.id);
                               }
                               setEditingSteps(newEditing);
                             }}
@@ -4729,11 +5623,33 @@ export default function ClientDetailPage() {
                                   <div style={{ fontWeight: '500', color: isStepCompleted ? '#059669' : '#991b1b', marginBottom: '0.25rem' }}>
                                     Step {actualStepIndex + 1}: {step}
                                   </div>
-                                  {grouped[step].map((template: any) => (
-                                    <div key={template.id} style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.5rem' }}>
-                                      {template.name}
-                                    </div>
-                                  ))}
+                                  {grouped[step].map((template: any) => {
+                                    // template.name is usually "App - step", but step is already shown above
+                                    // Only show template.name if it contains additional info beyond the step name
+                                    const templateName = template.name || '';
+                                    const stepName = step || '';
+                                    
+                                    // If template.name is in format "App - step", don't show it (redundant)
+                                    // Check if template.name ends with " - step" pattern
+                                    const nameLower = templateName.toLowerCase();
+                                    const stepLower = stepName.toLowerCase();
+                                    
+                                    // If template.name is exactly "App - step" format, skip it
+                                    if (nameLower.includes(' - ') && nameLower.endsWith(` - ${stepLower}`)) {
+                                      return null;
+                                    }
+                                    
+                                    // Only show if template.name is different from step
+                                    if (nameLower === stepLower) {
+                                      return null;
+                                    }
+                                    
+                                    return (
+                                      <div key={template.id} style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.5rem' }}>
+                                        {templateName}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </label>
                             );
@@ -4745,13 +5661,1473 @@ export default function ClientDetailPage() {
                   </div>
                 )}
               </div>
-            ))}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Inactive Started Apps Section */}
+            {inactiveStartedApps.length > 0 && showInactiveStartedApps && (
+              <div style={{ marginBottom: otherApps.length > 0 ? '2rem' : '0' }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem', color: '#64748b' }}>
+                  App Non Attive ({inactiveStartedApps.length})
+                </h3>
+                <div className="status-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {inactiveStartedApps.map((item) => {
+                    // Find the item in relatedApps to access all properties
+                    const fullItem = relatedApps.find((a: any) => a.id === item.id) || item;
+                    return (
+              <div key={fullItem.id} className="status-card" style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'relative', zIndex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <strong style={{ fontSize: '1.1rem' }}>{fullItem.app?.name ?? 'Unknown app'}</strong>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', position: 'relative', zIndex: 10 }}>
+                    <StatusBadge status={fullItem.status} />
+                    {editingAppDetailsId !== fullItem.id && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end', position: 'relative', zIndex: 10 }}>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEditAppDetails(fullItem);
+                          }}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            backgroundColor: '#3b82f6',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: '500',
+                            width: '100%',
+                            minWidth: '80px',
+                            position: 'relative',
+                            zIndex: 11,
+                            pointerEvents: 'auto'
+                          }}
+                          title="Edit app details"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          Edit
+                        </button>
+                        <Link
+                          href={`/message-templates?appId=${fullItem.app_id}&returnTo=/clients/${clientId}`}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            backgroundColor: '#10b981',
+                            color: 'white',
+                            textDecoration: 'none',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: '500',
+                            display: 'inline-block',
+                            width: '100%',
+                            minWidth: '80px',
+                            textAlign: 'center',
+                            position: 'relative',
+                            zIndex: 11,
+                            pointerEvents: 'auto'
+                          }}
+                          title="View message templates for this app"
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          View Messages
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {editingAppDetailsId === fullItem.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Status *</label>
+                      <select
+                        value={appStatus}
+                        onChange={(e) => setAppStatus(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                        disabled={isSavingAppDetails}
+                      >
+                        <option value="requested">Requested</option>
+                        <option value="registered">Registered</option>
+                        <option value="deposited">Deposited</option>
+                        <option value="waiting_bonus">Waiting Bonus</option>
+                        <option value="completed">Completed</option>
+                        <option value="paid">Paid</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Deposit Amount (€)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={appDepositAmount}
+                        onChange={(e) => setAppDepositAmount(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                        disabled={isSavingAppDetails}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                        Client Profit (€)
+                        {(() => {
+                          const clientApp = relatedApps.find((a: any) => a.id === fullItem.id);
+                          const promotionId = clientApp?.promotion_id;
+                          const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                          const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                          if (promotion?.client_reward) {
+                            return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.client_reward).toFixed(2)})</span>;
+                          }
+                          return null;
+                        })()}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={appClientProfit}
+                        onChange={(e) => setAppClientProfit(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                        disabled={isSavingAppDetails}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                        Internal Profit (€)
+                        {(() => {
+                          const clientApp = relatedApps.find((a: any) => a.id === item.id);
+                          const promotionId = clientApp?.promotion_id;
+                          const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                          const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                          if (promotion?.our_reward) {
+                            return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.our_reward).toFixed(2)})</span>;
+                          }
+                          return null;
+                        })()}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={appInternalProfit}
+                        onChange={(e) => setAppInternalProfit(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                        disabled={isSavingAppDetails}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={appDeposited}
+                          onChange={(e) => {
+                            const newDeposited = e.target.checked;
+                            setAppDeposited(newDeposited);
+                            // Auto-update status based on deposited/finished flags
+                            const newStatus = getAutoStatus(newDeposited, appFinished, appStatus);
+                            setAppStatus(newStatus);
+                          }}
+                          disabled={isSavingAppDetails}
+                        />
+                        <span>Deposited</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={appFinished}
+                          onChange={(e) => {
+                            const newFinished = e.target.checked;
+                            setAppFinished(newFinished);
+                            // Auto-update status based on deposited/finished flags
+                            const newStatus = getAutoStatus(appDeposited, newFinished, appStatus);
+                            setAppStatus(newStatus);
+                          }}
+                          disabled={isSavingAppDetails}
+                        />
+                        <span>Finished</span>
+                      </label>
+                    </div>
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={appIsOurDeposit}
+                          onChange={(e) => {
+                            setAppIsOurDeposit(e.target.checked);
+                            if (!e.target.checked) {
+                              // If unchecking, also uncheck paid back and clear source
+                              setAppDepositPaidBack(false);
+                              setAppDepositSource('');
+                            }
+                          }}
+                          disabled={isSavingAppDetails || !appDeposited}
+                        />
+                        <span style={{ fontWeight: '500' }}>Our Deposit</span>
+                        {!appDeposited && (
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
+                            (requires &quot;Deposited&quot; to be checked)
+                          </span>
+                        )}
+                      </label>
+                    </div>
+                    {appIsOurDeposit && (
+                      <>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                            Deposit Source
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.25rem' }}>
+                              (e.g., &quot;Luna account&quot;, &quot;Main wallet&quot;, &quot;Revolut card&quot;)
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={appDepositSource}
+                            onChange={(e) => setAppDepositSource(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                            placeholder="Where did the deposit come from?"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={appDepositPaidBack}
+                              onChange={(e) => setAppDepositPaidBack(e.target.checked)}
+                              disabled={isSavingAppDetails}
+                            />
+                            <span>Paid Back</span>
+                          </label>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                        <input
+                          type="checkbox"
+                          checked={appErrorIrrecoverable}
+                          onChange={(e) => setAppErrorIrrecoverable(e.target.checked)}
+                          disabled={isSavingAppDetails}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontWeight: '600', color: '#991b1b' }}>⚠️ Errore Irrecuperabile</span>
+                      </label>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', marginLeft: '1.5rem', fontStyle: 'italic' }}>
+                        Se selezionato, questa app verrà nascosta dalla vista del cliente
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                      <button
+                        onClick={() => {
+                          setDeleteModal({
+                            isOpen: true,
+                            type: 'clientApp',
+                            id: fullItem.id,
+                            name: fullItem.app?.name ?? 'this app'
+                          });
+                        }}
+                        disabled={isSavingAppDetails}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          backgroundColor: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: '500',
+                          opacity: isSavingAppDetails ? 0.6 : 1
+                        }}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={handleCancelAppDetailsEdit}
+                        disabled={isSavingAppDetails}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          backgroundColor: '#e2e8f0',
+                          color: '#475569',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: '500',
+                          opacity: isSavingAppDetails ? 0.6 : 1
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleSaveAppDetails(fullItem.id)}
+                        disabled={isSavingAppDetails}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                          fontSize: '0.8rem',
+                          fontWeight: '500',
+                          opacity: isSavingAppDetails ? 0.6 : 1
+                        }}
+                      >
+                        {isSavingAppDetails ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
+                    {fullItem.promotion?.name && <span><strong>Promotion:</strong> {fullItem.promotion.name}</span>}
+                    {fullItem.link && (fullItem.link.account_name || fullItem.link.code || fullItem.link.url) && (
+                      <span>
+                        <strong>Referral link:</strong> {fullItem.link.account_name || fullItem.link.code || fullItem.link.url}
+                      </span>
+                    )}
+                    <span><strong>Deposit:</strong> €{Number(
+                      fullItem.deposit_amount ?? 
+                      (fullItem.promotion?.deposit_required ?? 0)
+                    ).toFixed(2)}</span>
+                    <span><strong>Client profit:</strong> €{Number(
+                      fullItem.profit_client ?? 
+                      (fullItem.promotion?.client_reward ?? 0)
+                    ).toFixed(2)}</span>
+                    <span><strong>Internal profit:</strong> €{Number(
+                      fullItem.profit_us ?? 
+                      (fullItem.promotion?.our_reward ?? 0)
+                    ).toFixed(2)}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <strong>Started:</strong>
+                      {editingStartedAppId === fullItem.id ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                          <input
+                            type="date"
+                            value={startedDateText}
+                            onChange={(e) => setStartedDateText(e.target.value)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '0.85rem',
+                              fontFamily: 'inherit'
+                            }}
+                            disabled={isSavingStartedDate}
+                          />
+                          <button
+                            onClick={() => handleSaveStartedDate(fullItem.id)}
+                            disabled={isSavingStartedDate}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingStartedDate ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingStartedDate ? 0.6 : 1
+                            }}
+                          >
+                            {isSavingStartedDate ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingStartedAppId(null);
+                              setStartedDateText('');
+                            }}
+                            disabled={isSavingStartedDate}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#64748b',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingStartedDate ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingStartedDate ? 0.6 : 1
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span>{new Date(fullItem.started_at || fullItem.created_at).toLocaleDateString()}</span>
+                          <button
+                            onClick={() => handleEditStartedDate(fullItem.id, fullItem.started_at)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {(fullItem.status === 'completed' || fullItem.status === 'paid') && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <strong>Completed:</strong>
+                        {editingCompletedAppId === fullItem.id ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                            <input
+                              type="date"
+                              value={completedDateText}
+                              onChange={(e) => setCompletedDateText(e.target.value)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                fontSize: '0.85rem',
+                                fontFamily: 'inherit'
+                              }}
+                              disabled={isSavingCompletedDate}
+                            />
+                            <button
+                              onClick={() => handleSaveCompletedDate(fullItem.id)}
+                              disabled={isSavingCompletedDate}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isSavingCompletedDate ? 'not-allowed' : 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500',
+                                opacity: isSavingCompletedDate ? 0.6 : 1
+                              }}
+                            >
+                              {isSavingCompletedDate ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingCompletedAppId(null);
+                                setCompletedDateText('');
+                              }}
+                              disabled={isSavingCompletedDate}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#64748b',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isSavingCompletedDate ? 'not-allowed' : 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500',
+                                opacity: isSavingCompletedDate ? 0.6 : 1
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>
+                              {item.completed_at 
+                                ? new Date(item.completed_at).toLocaleDateString('it-IT')
+                                : item.started_at
+                                ? new Date(item.started_at).toLocaleDateString('it-IT') + ' (using start date)'
+                                : item.created_at
+                                ? new Date(item.created_at).toLocaleDateString('it-IT') + ' (using created date)'
+                                : 'Not set'}
+                            </span>
+                            <button
+                              onClick={() => handleEditCompletedDate(item.id, item.completed_at)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                fontWeight: '500'
+                              }}
+                            >
+                              {fullItem.completed_at ? 'Edit' : 'Set'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      {fullItem.deposited && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Deposited</span>}
+                      {fullItem.finished && <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '500' }}>✓ Finished</span>}
+                    </div>
+                    
+                    {/* Action buttons */}
+                    {fullItem.status === 'completed' && (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                        <button
+                          onClick={() => {
+                            setDeleteModal({
+                              isOpen: true,
+                              type: 'markAsPaid',
+                              id: fullItem.id,
+                              name: fullItem.apps?.name || 'this app process'
+                            });
+                          }}
+                          style={{
+                            padding: '0.4rem 0.75rem',
+                            backgroundColor: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            fontWeight: '500',
+                            width: '100%'
+                          }}
+                        >
+                          Mark as Paid
+                        </button>
+                      </div>
+                    )}
+                    
+                    <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <strong>Notes:</strong>
+                        {editingAppId !== fullItem.id && (
+                          <button
+                            onClick={() => handleEditAppNotes(fullItem.id, fullItem.notes)}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: '#3b82f6',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            {fullItem.notes ? 'Edit' : 'Add'}
+                          </button>
+                        )}
+                      </div>
+                    
+                    {editingAppId === fullItem.id ? (
+                      <div>
+                        <textarea
+                          value={appNotesText}
+                          onChange={(e) => setAppNotesText(e.target.value)}
+                          placeholder="Add notes about this app..."
+                          style={{
+                            width: '100%',
+                            minHeight: '60px',
+                            padding: '0.5rem',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '4px',
+                            fontSize: '0.85rem',
+                            fontFamily: 'inherit',
+                            resize: 'vertical',
+                            marginBottom: '0.5rem'
+                          }}
+                          disabled={isSavingAppNotes}
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={handleCancelAppEdit}
+                            disabled={isSavingAppNotes}
+                            style={{
+                              padding: '0.25rem 0.75rem',
+                              backgroundColor: '#e2e8f0',
+                              color: '#475569',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingAppNotes ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingAppNotes ? 0.6 : 1
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleSaveAppNotes(fullItem.id)}
+                            disabled={isSavingAppNotes}
+                            style={{
+                              padding: '0.25rem 0.75rem',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingAppNotes ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingAppNotes ? 0.6 : 1
+                            }}
+                          >
+                            {isSavingAppNotes ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <span style={{ color: fullItem.notes ? '#64748b' : '#94a3b8', fontStyle: fullItem.notes ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
+                        {(() => {
+                          // Remove completedSteps JSON from displayed notes
+                          let displayNotes = fullItem.notes || '';
+                          displayNotes = displayNotes.replace(/\s*\{.*"completedSteps".*?\}\s*/g, '').trim();
+                          return displayNotes || 'No notes added yet.';
+                        })()}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Incomplete Steps UI */}
+                  {(() => {
+                    // Get message templates for this app
+                    const appTemplates = Array.isArray(allMessageTemplates) 
+                      ? allMessageTemplates.filter((t: any) => t.app_id === fullItem.app_id)
+                      : [];
+                    
+                    if (appTemplates.length === 0) return null;
+                    
+                    // Group templates by step
+                    const grouped: { [key: string]: any[] } = {};
+                    const stepOrder: string[] = [];
+                    
+                    appTemplates.forEach((template: any) => {
+                      const step = template.step || 'Other';
+                      if (!grouped[step]) {
+                        grouped[step] = [];
+                        stepOrder.push(step);
+                      }
+                      grouped[step].push(template);
+                    });
+                    
+                    // Get completed steps from completed_steps JSONB column
+                    let completedSteps: Set<string> = new Set();
+                    try {
+                      if (fullItem.completed_steps && Array.isArray(fullItem.completed_steps)) {
+                        completedSteps = new Set(fullItem.completed_steps);
+                      }
+                    } catch (e) {
+                      // Ignore parse errors
+                    }
+                    
+                    // If status is "completed", mark all steps as completed
+                    if (fullItem.status === 'completed' && stepOrder.length > 0) {
+                      stepOrder.forEach(step => completedSteps.add(step));
+                    }
+                    
+                    // Filter to show only incomplete steps (when not editing)
+                    const incompleteSteps = stepOrder.filter(step => !completedSteps.has(step));
+                    const isEditingSteps = editingSteps.has(fullItem.id);
+                    
+                    // Hide steps section if status is "completed" and not editing
+                    if (fullItem.status === 'completed' && !isEditingSteps && incompleteSteps.length === 0) {
+                      return null;
+                    }
+                    
+                    // Helper function to update step completion
+                    const updateStepCompletion = async (newCompletedSteps: Set<string>) => {
+                      const completedStepsArray = Array.from(newCompletedSteps);
+                      
+                      // Determine new status based on completed steps
+                      const totalSteps = stepOrder.length;
+                      const completedCount = completedStepsArray.length;
+                      let newStatus = fullItem.status;
+                      
+                      if (completedCount === totalSteps) {
+                        // All steps completed
+                        newStatus = 'completed';
+                      } else if (completedCount > 0) {
+                        // Some steps completed
+                        if (newStatus === 'requested' || newStatus === 'registered') {
+                          newStatus = 'registered';
+                        } else if (newStatus === 'deposited' && completedCount >= totalSteps * 0.5) {
+                          newStatus = 'waiting_bonus';
+                        }
+                      } else {
+                        // No steps completed, revert to requested if was completed
+                        if (newStatus === 'completed' && !fullItem.finished) {
+                          newStatus = 'requested';
+                        }
+                      }
+                      
+                      try {
+                        await updateClientApp(
+                          { 
+                            completed_steps: completedStepsArray as any,
+                            status: newStatus
+                          } as any,
+                          fullItem.id,
+                          {
+                            onSuccess: () => {
+                              mutateClientApps();
+                            },
+                            onError: (error) => {
+                              console.error('Error updating step completion:', error);
+                              setToast({
+                                isOpen: true,
+                                message: 'Failed to update step completion. Please try again.',
+                                type: 'error'
+                              });
+                            }
+                          }
+                        );
+                      } catch (error) {
+                        console.error('Error updating step completion:', error);
+                        setToast({
+                          isOpen: true,
+                          message: 'Failed to update step completion. Please try again.',
+                          type: 'error'
+                        });
+                      }
+                    };
+                    
+                    if (stepOrder.length === 0) return null;
+                    
+                    return (
+                      <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <div style={{ fontWeight: '600', fontSize: '0.9rem', color: isEditingSteps ? '#3b82f6' : '#dc2626' }}>
+                            {isEditingSteps ? 'All Steps' : `Incomplete Steps (${incompleteSteps.length}/${stepOrder.length})`}
+                          </div>
+                          <button
+                            onClick={() => {
+                              const newEditing = new Set(editingSteps);
+                              if (isEditingSteps) {
+                                newEditing.delete(fullItem.id);
+                              } else {
+                                newEditing.add(fullItem.id);
+                              }
+                              setEditingSteps(newEditing);
+                            }}
+                            style={{
+                              padding: '0.25rem 0.5rem',
+                              backgroundColor: isEditingSteps ? '#e2e8f0' : '#3b82f6',
+                              color: isEditingSteps ? '#475569' : 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem',
+                              fontWeight: '500'
+                            }}
+                          >
+                            {isEditingSteps ? 'Done' : 'Edit Steps'}
+                          </button>
+                        </div>
+                        <div style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '0.5rem', 
+                          maxHeight: '200px', 
+                          overflowY: 'auto',
+                          transition: 'all 0.2s ease-in-out'
+                        }}>
+                          {(isEditingSteps ? stepOrder : incompleteSteps).map((step) => {
+                            const actualStepIndex = stepOrder.indexOf(step);
+                            const isStepCompleted = completedSteps.has(step);
+                            return (
+                              <label
+                                key={step}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: '0.5rem',
+                                  padding: '0.5rem',
+                                  backgroundColor: isStepCompleted ? '#f0fdf4' : '#fef2f2',
+                                  borderRadius: '4px',
+                                  border: `1px solid ${isStepCompleted ? '#10b981' : '#fecaca'}`,
+                                  cursor: 'pointer',
+                                  fontSize: '0.85rem',
+                                  minHeight: '3rem',
+                                  transition: 'all 0.2s ease-in-out',
+                                  position: 'relative'
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isStepCompleted}
+                                  onChange={async (e) => {
+                                    const newCompletedSteps = new Set(completedSteps);
+                                    if (e.target.checked) {
+                                      newCompletedSteps.add(step);
+                                    } else {
+                                      newCompletedSteps.delete(step);
+                                    }
+                                    await updateStepCompletion(newCompletedSteps);
+                                  }}
+                                  style={{ marginTop: '0.125rem', cursor: 'pointer' }}
+                                />
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: '500', color: isStepCompleted ? '#059669' : '#991b1b', marginBottom: '0.25rem' }}>
+                                    Step {actualStepIndex + 1}: {step}
+                                  </div>
+                                  {grouped[step].map((template: any) => {
+                                    // template.name is usually "App - step", but step is already shown above
+                                    // Only show template.name if it contains additional info beyond the step name
+                                    const templateName = template.name || '';
+                                    const stepName = step || '';
+                                    
+                                    // If template.name is in format "App - step", don't show it (redundant)
+                                    // Check if template.name ends with " - step" pattern
+                                    const nameLower = templateName.toLowerCase();
+                                    const stepLower = stepName.toLowerCase();
+                                    
+                                    // If template.name is exactly "App - step" format, skip it
+                                    if (nameLower.includes(' - ') && nameLower.endsWith(` - ${stepLower}`)) {
+                                      return null;
+                                    }
+                                    
+                                    // Only show if template.name is different from step
+                                    if (nameLower === stepLower) {
+                                      return null;
+                                    }
+                                    
+                                    return (
+                                      <div key={template.id} style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.5rem' }}>
+                                        {templateName}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  </div>
+                )}
+              </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Other Apps Section (completed, paid, cancelled) */}
+            {otherApps.length > 0 && (
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem', color: '#3b82f6' }}>
+                  App Completate ({otherApps.length})
+                </h3>
+                <div className="status-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  {otherApps.map((item) => {
+                    const fullItem = relatedApps.find((a: any) => a.id === item.id) || item;
+                    return (
+                      <div key={fullItem.id} className="status-card" style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'relative', zIndex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <strong style={{ fontSize: '1.1rem' }}>{fullItem.app?.name ?? 'Unknown app'}</strong>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', position: 'relative', zIndex: 10 }}>
+                            <StatusBadge status={fullItem.status} />
+                            {editingAppDetailsId !== fullItem.id && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end', position: 'relative', zIndex: 10 }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    console.log('Edit button clicked for app:', fullItem.id, fullItem.app?.name);
+                                    handleEditAppDetails(fullItem);
+                                  }}
+                                  style={{
+                                    padding: '0.25rem 0.5rem',
+                                    backgroundColor: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '500',
+                                    width: '100%',
+                                    minWidth: '80px',
+                                    position: 'relative',
+                                    zIndex: 11,
+                                    pointerEvents: 'auto'
+                                  }}
+                                  title="Edit app details"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {editingAppDetailsId === fullItem.id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Status *</label>
+                              <select
+                                value={appStatus}
+                                onChange={(e) => setAppStatus(e.target.value)}
+                                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                                disabled={isSavingAppDetails}
+                              >
+                                <option value="requested">Requested</option>
+                                <option value="registered">Registered</option>
+                                <option value="deposited">Deposited</option>
+                                <option value="waiting_bonus">Waiting Bonus</option>
+                                <option value="completed">Completed</option>
+                                <option value="paid">Paid</option>
+                                <option value="cancelled">Cancelled</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Deposit Amount (€)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={appDepositAmount}
+                                onChange={(e) => setAppDepositAmount(e.target.value)}
+                                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                                disabled={isSavingAppDetails}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                                Client Profit (€)
+                                {(() => {
+                                  const clientApp = relatedApps.find((a: any) => a.id === fullItem.id) || otherApps.find((a: any) => a.id === fullItem.id);
+                                  const promotionId = clientApp?.promotion_id;
+                                  const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                                  const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                                  if (promotion?.client_reward) {
+                                    return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.client_reward).toFixed(2)})</span>;
+                                  }
+                                  return null;
+                                })()}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={appClientProfit}
+                                onChange={(e) => setAppClientProfit(e.target.value)}
+                                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                                disabled={isSavingAppDetails}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                                Internal Profit (€)
+                                {(() => {
+                                  const clientApp = relatedApps.find((a: any) => a.id === fullItem.id) || otherApps.find((a: any) => a.id === fullItem.id);
+                                  const promotionId = clientApp?.promotion_id;
+                                  const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                                  const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                                  if (promotion?.our_reward) {
+                                    return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.our_reward).toFixed(2)})</span>;
+                                  }
+                                  return null;
+                                })()}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={appInternalProfit}
+                                onChange={(e) => setAppInternalProfit(e.target.value)}
+                                style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                                disabled={isSavingAppDetails}
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={appDeposited}
+                                  onChange={(e) => {
+                                    setAppDeposited(e.target.checked);
+                                    if (e.target.checked && !appStatus) {
+                                      setAppStatus('deposited');
+                                    }
+                                  }}
+                                  disabled={isSavingAppDetails}
+                                />
+                                <span>Deposited</span>
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={appFinished}
+                                  onChange={(e) => {
+                                    setAppFinished(e.target.checked);
+                                    if (e.target.checked) {
+                                      setAppStatus('completed');
+                                    }
+                                  }}
+                                  disabled={isSavingAppDetails}
+                                />
+                                <span>Finished</span>
+                              </label>
+                            </div>
+                            <div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={appIsOurDeposit}
+                                  onChange={(e) => {
+                                    setAppIsOurDeposit(e.target.checked);
+                                    if (!e.target.checked) {
+                                      setAppDepositPaidBack(false);
+                                      setAppDepositSource('');
+                                    }
+                                  }}
+                                  disabled={isSavingAppDetails || !appDeposited}
+                                />
+                                <span style={{ fontWeight: '500' }}>Our Deposit</span>
+                                {!appDeposited && (
+                                  <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
+                                    (requires &quot;Deposited&quot; to be checked)
+                                  </span>
+                                )}
+                              </label>
+                            </div>
+                            {appIsOurDeposit && (
+                              <>
+                                <div>
+                                  <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                                    Deposit Source
+                                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.25rem' }}>
+                                      (e.g., &quot;Luna account&quot;, &quot;Main wallet&quot;, &quot;Revolut card&quot;)
+                                    </span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={appDepositSource}
+                                    onChange={(e) => setAppDepositSource(e.target.value)}
+                                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                                    disabled={isSavingAppDetails}
+                                    placeholder="Where did the deposit come from?"
+                                  />
+                                </div>
+                                <div>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={appDepositPaidBack}
+                                      onChange={(e) => setAppDepositPaidBack(e.target.checked)}
+                                      disabled={isSavingAppDetails}
+                                    />
+                                    <span>Paid Back</span>
+                                  </label>
+                                </div>
+                              </>
+                            )}
+                            <div>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={appErrorIrrecoverable}
+                                  onChange={(e) => setAppErrorIrrecoverable(e.target.checked)}
+                                  disabled={isSavingAppDetails}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                                <span style={{ fontWeight: '600', color: '#991b1b' }}>⚠️ Errore Irrecuperabile</span>
+                              </label>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', marginLeft: '1.5rem', fontStyle: 'italic' }}>
+                                Se selezionato, questa app verrà nascosta dalla vista del cliente
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                              <button
+                                onClick={() => {
+                                  setDeleteModal({
+                                    isOpen: true,
+                                    type: 'clientApp',
+                                    id: fullItem.id,
+                                    name: fullItem.app?.name ?? 'this app'
+                                  });
+                                }}
+                                disabled={isSavingAppDetails}
+                                style={{
+                                  padding: '0.4rem 0.75rem',
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '500',
+                                  opacity: isSavingAppDetails ? 0.6 : 1
+                                }}
+                              >
+                                Delete
+                              </button>
+                              <button
+                                onClick={handleCancelAppDetailsEdit}
+                                disabled={isSavingAppDetails}
+                                style={{
+                                  padding: '0.4rem 0.75rem',
+                                  backgroundColor: '#64748b',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '500',
+                                  opacity: isSavingAppDetails ? 0.6 : 1
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleSaveAppDetails(fullItem.id)}
+                                disabled={isSavingAppDetails || !appStatus}
+                                style={{
+                                  padding: '0.4rem 0.75rem',
+                                  backgroundColor: isSavingAppDetails || !appStatus ? '#cbd5e1' : '#10b981',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: isSavingAppDetails || !appStatus ? 'not-allowed' : 'pointer',
+                                  fontSize: '0.8rem',
+                                  fontWeight: '500',
+                                  opacity: isSavingAppDetails || !appStatus ? 0.6 : 1
+                                }}
+                              >
+                                {isSavingAppDetails ? 'Saving...' : 'Save'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
+                              {fullItem.promotion?.name && <span><strong>Promotion:</strong> {fullItem.promotion.name}</span>}
+                              <span><strong>Client profit:</strong> €{Number(fullItem.profit_client ?? (fullItem.promotion?.client_reward ?? 0)).toFixed(2)}</span>
+                              <span><strong>Internal profit:</strong> €{Number(fullItem.profit_us ?? (fullItem.promotion?.our_reward ?? 0)).toFixed(2)}</span>
+                            </div>
+                            {fullItem.status === 'completed' && (
+                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setDeleteModal({
+                                      isOpen: true,
+                                      type: 'markAsPaid',
+                                      id: fullItem.id,
+                                      name: fullItem.app?.name || 'this app process'
+                                    });
+                                  }}
+                                  style={{
+                                    padding: '0.4rem 0.75rem',
+                                    backgroundColor: '#10b981',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    fontWeight: '500',
+                                    width: '100%'
+                                  }}
+                                >
+                                  Mark as Paid
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <EmptyState
             title="No apps started"
             message="This client hasn't started any apps yet."
           />
+        )}
+
+        {/* Hidden Apps Section (error_irrecoverable = true) */}
+        {hiddenApps.length > 0 && (
+          <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: '#fef2f2', borderRadius: '12px', border: '2px solid #fecaca' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '600', margin: 0, color: '#991b1b' }}>
+                ⚠️ App Nascoste (Errore Irrecuperabile)
+              </h3>
+              <span style={{
+                padding: '0.25rem 0.75rem',
+                backgroundColor: '#fee2e2',
+                color: '#991b1b',
+                borderRadius: '12px',
+                fontSize: '0.875rem',
+                fontWeight: '600'
+              }}>
+                {hiddenApps.length}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.875rem', color: '#7f1d1d', marginBottom: '1rem', fontStyle: 'italic' }}>
+              Queste app sono state nascoste dalla vista principale. Puoi modificarle per rimuovere il flag &quot;Errore Irrecuperabile&quot; e ripristinarle.
+            </div>
+            <div className="status-columns" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+              {hiddenApps.map((item) => {
+                const fullItem = item;
+                return (
+                  <div key={fullItem.id} className="status-card" style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '8px', border: '2px solid #fecaca', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                      <strong style={{ fontSize: '1.1rem' }}>{fullItem.app?.name ?? 'Unknown app'}</strong>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', position: 'relative', zIndex: 10 }}>
+                        <StatusBadge status={fullItem.status} />
+                        {editingAppDetailsId !== fullItem.id && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-end', position: 'relative', zIndex: 10 }}>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleEditAppDetails(fullItem);
+                              }}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: '500',
+                                width: '100%',
+                                minWidth: '80px',
+                                position: 'relative',
+                                zIndex: 11,
+                                pointerEvents: 'auto'
+                              }}
+                              title="Edit app details"
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {editingAppDetailsId === fullItem.id ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Status *</label>
+                          <select
+                            value={appStatus}
+                            onChange={(e) => setAppStatus(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                          >
+                            <option value="requested">Requested</option>
+                            <option value="registered">Registered</option>
+                            <option value="deposited">Deposited</option>
+                            <option value="waiting_bonus">Waiting Bonus</option>
+                            <option value="completed">Completed</option>
+                            <option value="paid">Paid</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>Deposit Amount (€)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={appDepositAmount}
+                            onChange={(e) => setAppDepositAmount(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                            Client Profit (€)
+                            {(() => {
+                              const clientApp = relatedApps.find((a: any) => a.id === fullItem.id) || hiddenApps.find((a: any) => a.id === fullItem.id);
+                              const promotionId = clientApp?.promotion_id;
+                              const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                              const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                              if (promotion?.client_reward) {
+                                return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.client_reward).toFixed(2)})</span>;
+                              }
+                              return null;
+                            })()}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={appClientProfit}
+                            onChange={(e) => setAppClientProfit(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.85rem', fontWeight: '500' }}>
+                            Internal Profit (€)
+                            {(() => {
+                              const clientApp = relatedApps.find((a: any) => a.id === fullItem.id) || hiddenApps.find((a: any) => a.id === fullItem.id);
+                              const promotionId = clientApp?.promotion_id;
+                              const promotionsArray = Array.isArray(allPromotions) ? allPromotions : [];
+                              const promotion = promotionId ? promotionsArray.find((p: any) => p.id === promotionId) : null;
+                              if (promotion?.our_reward) {
+                                return <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '400', marginLeft: '0.5rem' }}>(from promotion: €{Number(promotion.our_reward).toFixed(2)})</span>;
+                              }
+                              return null;
+                            })()}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={appInternalProfit}
+                            onChange={(e) => setAppInternalProfit(e.target.value)}
+                            style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.85rem' }}
+                            disabled={isSavingAppDetails}
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={appDeposited}
+                              onChange={(e) => {
+                                const newDeposited = e.target.checked;
+                                setAppDeposited(newDeposited);
+                                const newStatus = getAutoStatus(newDeposited, appFinished, appStatus);
+                                setAppStatus(newStatus);
+                              }}
+                              disabled={isSavingAppDetails}
+                            />
+                            <span>Deposited</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={appFinished}
+                              onChange={(e) => {
+                                const newFinished = e.target.checked;
+                                setAppFinished(newFinished);
+                                const newStatus = getAutoStatus(appDeposited, newFinished, appStatus);
+                                setAppStatus(newStatus);
+                              }}
+                              disabled={isSavingAppDetails}
+                            />
+                            <span>Finished</span>
+                          </label>
+                        </div>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', borderRadius: '4px', border: '1px solid #fecaca' }}>
+                            <input
+                              type="checkbox"
+                              checked={appErrorIrrecoverable}
+                              onChange={(e) => setAppErrorIrrecoverable(e.target.checked)}
+                              disabled={isSavingAppDetails}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span style={{ fontWeight: '600', color: '#991b1b' }}>⚠️ Errore Irrecuperabile</span>
+                          </label>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem', marginLeft: '1.5rem', fontStyle: 'italic' }}>
+                            Deseleziona questa opzione per ripristinare l&apos;app nella vista principale
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                          <button
+                            onClick={() => {
+                              setDeleteModal({
+                                isOpen: true,
+                                type: 'clientApp',
+                                id: fullItem.id,
+                                name: fullItem.app?.name ?? 'this app'
+                              });
+                            }}
+                            disabled={isSavingAppDetails}
+                            style={{
+                              padding: '0.4rem 0.75rem',
+                              backgroundColor: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingAppDetails ? 0.6 : 1
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={handleCancelAppDetailsEdit}
+                            disabled={isSavingAppDetails}
+                            style={{
+                              padding: '0.4rem 0.75rem',
+                              backgroundColor: '#e2e8f0',
+                              color: '#475569',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingAppDetails ? 0.6 : 1
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleSaveAppDetails(fullItem.id)}
+                            disabled={isSavingAppDetails}
+                            style={{
+                              padding: '0.4rem 0.75rem',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: isSavingAppDetails ? 'not-allowed' : 'pointer',
+                              fontSize: '0.8rem',
+                              fontWeight: '500',
+                              opacity: isSavingAppDetails ? 0.6 : 1
+                            }}
+                          >
+                            {isSavingAppDetails ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: '#64748b' }}>
+                        <div style={{ padding: '0.5rem', backgroundColor: '#fee2e2', borderRadius: '4px', border: '1px solid #fecaca', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: '600', color: '#991b1b' }}>⚠️ Questa app è nascosta dalla vista principale</span>
+                        </div>
+                        {fullItem.promotion?.name && <span><strong>Promotion:</strong> {fullItem.promotion.name}</span>}
+                        <span><strong>Status:</strong> <StatusBadge status={fullItem.status} /></span>
+                        {fullItem.started_at && (
+                          <span><strong>Started:</strong> {new Date(fullItem.started_at).toLocaleDateString()}</span>
+                        )}
+                        {fullItem.notes && (
+                          <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
+                            <strong>Notes:</strong>
+                            <div style={{ marginTop: '0.25rem', whiteSpace: 'pre-wrap', fontSize: '0.85rem' }}>
+                              {fullItem.notes}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </section>
 
@@ -5176,7 +7552,23 @@ export default function ClientDetailPage() {
                           </>
                         )}
                       </td>
-                      <td>€{Number(debt.amount).toFixed(2)}</td>
+                      <td>
+                        {(() => {
+                          const baseAmount = Number(debt.amount || 0);
+                          const surplus = isDepositDebt ? Number(debt.surplus || 0) : 0;
+                          const total = baseAmount + surplus;
+                          return (
+                            <div>
+                              <div>€{total.toFixed(2)}</div>
+                              {surplus > 0 && (
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                  (€{baseAmount.toFixed(2)} + €{surplus.toFixed(2)} surplus)
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <StatusBadge status={debt.status} />
                       </td>
@@ -5593,7 +7985,7 @@ export default function ClientDetailPage() {
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
                       >
-                        + Add custom type: "{errorTypeInput}"
+                        + Add custom type: &quot;{errorTypeInput}&quot;
                       </li>
                     )}
                   </ul>
@@ -5999,7 +8391,7 @@ export default function ClientDetailPage() {
                                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e0f2fe'}
                                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
                                     >
-                                      + Add custom type: "{editingErrorTypeInput}"
+                                      + Add custom type: &quot;{editingErrorTypeInput}&quot;
                                     </li>
                                   )}
                                 </ul>

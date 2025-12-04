@@ -26,7 +26,8 @@ export default function PromotionsPage() {
 
   const {
     data: apps,
-    isLoading: appsLoading
+    isLoading: appsLoading,
+    mutate: mutateApps
   } = useSupabaseData({
     table: 'apps',
     order: { column: 'name', ascending: true }
@@ -249,6 +250,10 @@ export default function PromotionsPage() {
       };
 
       await updatePromotion(updateData, editingPromotionId);
+      // Trigger refresh of apps to reflect any status changes (trigger will sync app.is_active automatically)
+      if (mutateApps) {
+        mutateApps();
+      }
       setEditingPromotionId(null);
     } catch (error) {
       console.error('Error saving promotion:', error);
@@ -636,6 +641,22 @@ export default function PromotionsPage() {
                           style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
                           disabled={isSavingPromotion}
                         />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
+                        Time to Get Bonus (used for payout calculation)
+                      </label>
+                      <input
+                        type="text"
+                        value={promoTimeToGetBonus}
+                        onChange={(e) => setPromoTimeToGetBonus(e.target.value)}
+                        placeholder="e.g., 30 giorni, 40 giorni, subito"
+                        style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                        disabled={isSavingPromotion}
+                      />
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                        This field is used to calculate expected payout date. Format: &quot;X giorni&quot; or &quot;X days&quot; (e.g., &quot;40 giorni&quot; for Buddybank)
                       </div>
                     </div>
                     <div>

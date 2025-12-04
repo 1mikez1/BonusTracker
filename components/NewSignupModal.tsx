@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { useSupabaseMutations } from '@/lib/useSupabaseMutations';
@@ -137,7 +137,7 @@ export function NewSignupModal({
   });
 
   // Convert allPartners to array
-  const allPartnersArray = Array.isArray(allPartners) ? allPartners : [];
+  const allPartnersArray = useMemo(() => Array.isArray(allPartners) ? allPartners : [], [allPartners]);
 
   // Filter partners for Invited By dropdown
   const filteredInvitedByPartners = useMemo(() => {
@@ -288,7 +288,7 @@ export function NewSignupModal({
   const { insert: insertPartnerAssignment } = useSupabaseMutations('client_partner_assignments');
 
   // Search for existing client by contact (exact match) or name (similar)
-  const searchExistingClient = async () => {
+  const searchExistingClient = useCallback(async () => {
     if ((!contact.trim() && !fullName.trim()) || !allClients) {
       setFoundExistingClient(null);
       setHasSearched(true);
@@ -326,7 +326,7 @@ export function NewSignupModal({
 
     setFoundExistingClient(found || null);
     setIsSearching(false);
-  };
+  }, [contact, fullName, allClients]);
 
   // Reset form when modal opens/closes
   useEffect(() => {
@@ -369,7 +369,7 @@ export function NewSignupModal({
         }
       }
     }
-  }, [isOpen, initialClientId, initialAppId, initialClientData]);
+  }, [isOpen, initialClientId, initialAppId, initialClientData, allClients, searchExistingClient]);
 
   const handleUseExistingClient = () => {
     if (foundExistingClient) {
@@ -576,28 +576,28 @@ export function NewSignupModal({
       console.log('Final clientAppData being sent:', clientAppData);
 
       await insertClientApp(clientAppData);
-      setIsSaving(false);
-      mutateClientApps();
-
-      const appName = (apps || []).find((a: any) => a.id === selectedAppId)?.name || 'the app';
-      const clientName = `${selectedClient.name}${selectedClient.surname ? ' ' + selectedClient.surname : ''}`;
-      const successMessage = `Signup created successfully for ${clientName} - ${appName}!`;
-
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('signupSuccessMessage', successMessage);
-      }
-
-      setToast({
-        isOpen: true,
-        message: successMessage,
-        type: 'success'
-      });
-
-      if (onSuccess) onSuccess();
-
-      setTimeout(() => {
-        onClose();
-        router.push(`/clients/${selectedClient.id}`);
+          setIsSaving(false);
+          mutateClientApps();
+          
+          const appName = (apps || []).find((a: any) => a.id === selectedAppId)?.name || 'the app';
+          const clientName = `${selectedClient.name}${selectedClient.surname ? ' ' + selectedClient.surname : ''}`;
+          const successMessage = `Signup created successfully for ${clientName} - ${appName}!`;
+          
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('signupSuccessMessage', successMessage);
+          }
+          
+          setToast({
+            isOpen: true,
+            message: successMessage,
+            type: 'success'
+          });
+          
+          if (onSuccess) onSuccess();
+          
+          setTimeout(() => {
+            onClose();
+            router.push(`/clients/${selectedClient.id}`);
       }, 1500);
     } catch (err: any) {
       setIsSaving(false);
@@ -1075,7 +1075,7 @@ export function NewSignupModal({
                         </div>
                         <div>
                           This client already has a signup for {(existingApp as any)?.apps?.name || 'this app'} 
-                          {' '}with status "{(existingApp as any)?.status || 'unknown'}".
+                          {' '}with status &quot;{(existingApp as any)?.status || 'unknown'}&quot;.
                         </div>
                         <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem' }}>
                           Please edit the existing signup from the client profile page instead of creating a new one.
@@ -1171,9 +1171,9 @@ export function NewSignupModal({
                             }
                             
                             return (
-                              <option key={link.id} value={link.id}>
+                          <option key={link.id} value={link.id}>
                                 {displayText}
-                              </option>
+                          </option>
                             );
                           })}
                       </select>

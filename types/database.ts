@@ -432,6 +432,7 @@ export type Database = {
           id: string
           paid_back_at: string | null
           status: string
+          surplus: number
         }
         Insert: {
           amount: number
@@ -443,6 +444,7 @@ export type Database = {
           id?: string
           paid_back_at?: string | null
           status?: string
+          surplus?: number
         }
         Update: {
           amount?: number
@@ -454,6 +456,7 @@ export type Database = {
           id?: string
           paid_back_at?: string | null
           status?: string
+          surplus?: number
         }
         Relationships: [
           {

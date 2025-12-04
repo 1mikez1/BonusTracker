@@ -24,25 +24,69 @@ export interface MonthlyPoint {
   amount: number;
 }
 
-const statusContributes = new Set(['completed', 'paid']);
+// Partner "due" is calculated when app status is 'completed' (not 'paid')
+// This allows partners to be paid in advance before the app is marked as paid
+const statusContributes = new Set(['completed']);
+
+export interface PartnerAppSplit {
+  id: string;
+  partner_id: string;
+  app_id: string;
+  split_partner: number;
+  split_owner: number;
+  notes?: string | null;
+}
 
 export function buildPartnerBreakdown({
   partner,
   assignments,
-  clientApps
+  clientApps,
+  appSplits
 }: {
   partner: ClientPartner;
   assignments: ClientPartnerAssignment[];
   clientApps: ClientAppRow[];
+  appSplits?: PartnerAppSplit[];
 }): PartnerClientBreakdown[] {
   const result: PartnerClientBreakdown[] = [];
+  const appSplitsMap = new Map<string, PartnerAppSplit>();
+  if (appSplits) {
+    appSplits.forEach((split) => {
+      appSplitsMap.set(split.app_id, split);
+    });
+  }
+
   assignments.forEach((assignment) => {
-    const splitPartner = assignment.split_partner_override ?? partner.default_split_partner;
-    const splitOwner = assignment.split_owner_override ?? partner.default_split_owner;
+    // Base splits: assignment override or partner default
+    const baseSplitPartner = assignment.split_partner_override ?? partner.default_split_partner;
+    const baseSplitOwner = assignment.split_owner_override ?? partner.default_split_owner;
+    
     const relatedApps = clientApps.filter(
       (app) => app.client_id === assignment.client_id && statusContributes.has(app.status)
     );
-    const totalProfit = relatedApps.reduce((sum, app) => sum + Number(app.profit_us ?? 0), 0);
+    
+    // Calculate profit per app with app-specific splits
+    let totalProfit = 0;
+    let totalPartnerShare = 0;
+    let totalOwnerShare = 0;
+    let hasAppSpecificSplit = false;
+    
+    relatedApps.forEach((app) => {
+      const profit = Number(app.profit_us ?? 0);
+      totalProfit += profit;
+      
+      // Priority: 1) app-specific split, 2) assignment override, 3) partner default
+      const appSplit = app.app_id ? appSplitsMap.get(app.app_id) : null;
+      const splitPartner = appSplit?.split_partner ?? baseSplitPartner;
+      const splitOwner = appSplit?.split_owner ?? baseSplitOwner;
+      
+      if (appSplit) {
+        hasAppSpecificSplit = true;
+      }
+      
+      totalPartnerShare += profit * splitPartner;
+      totalOwnerShare += profit * splitOwner;
+    });
     
     // Get client name - try assignment.client first, then check if it's an array
     let clientName = 'Unknown';
@@ -58,17 +102,22 @@ export function buildPartnerBreakdown({
       }
     }
     
+    // Calculate average split for display (weighted by profit)
+    const avgSplitPartner = totalProfit > 0 ? totalPartnerShare / totalProfit : baseSplitPartner;
+    const avgSplitOwner = totalProfit > 0 ? totalOwnerShare / totalProfit : baseSplitOwner;
+    
     result.push({
       clientId: assignment.client_id,
       clientName,
       totalProfit,
-      partnerShare: totalProfit * splitPartner,
-      ownerShare: totalProfit * splitOwner,
-      splitPartner,
-      splitOwner,
+      partnerShare: totalPartnerShare,
+      ownerShare: totalOwnerShare,
+      splitPartner: avgSplitPartner,
+      splitOwner: avgSplitOwner,
       override:
         assignment.split_partner_override !== null ||
-        assignment.split_owner_override !== null
+        assignment.split_owner_override !== null ||
+        hasAppSpecificSplit
     });
   });
   return result;
@@ -78,9 +127,10 @@ export function calculatePartnerBalance({
   partner,
   assignments,
   clientApps,
-  payments
-}: BuildPartnerTotalsArgs): PartnerBalance {
-  const breakdown = buildPartnerBreakdown({ partner, assignments, clientApps });
+  payments,
+  appSplits
+}: BuildPartnerTotalsArgs & { appSplits?: PartnerAppSplit[] }): PartnerBalance {
+  const breakdown = buildPartnerBreakdown({ partner, assignments, clientApps, appSplits });
   const partnerShare = breakdown.reduce((sum, item) => sum + item.partnerShare, 0);
   const ownerShare = breakdown.reduce((sum, item) => sum + item.ownerShare, 0);
   const totalProfit = breakdown.reduce((sum, item) => sum + item.totalProfit, 0);

@@ -10,6 +10,7 @@ const links = [
   { href: '/promotions', label: 'Promotions' },
   { href: '/pipeline', label: 'Pipeline' },
   { href: '/deadlines', label: 'Deadlines' },
+  { href: '/payouts', label: 'Payouts' },
   { href: '/referral-links', label: 'Referral Links' },
   { href: '/partners', label: 'Partners' },
   { href: '/debts', label: 'Debts' },

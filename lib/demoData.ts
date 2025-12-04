@@ -15,6 +15,7 @@ const sampleClients: Array<Table<'clients'>> = [
     trusted: true,
     tier_id: 'tier-top',
     invited_by_client_id: null,
+    invited_by_partner_id: null,
     invited_by_name: null,
     goated: false,
     needs_rewrite: false,
@@ -31,6 +32,7 @@ const sampleClients: Array<Table<'clients'>> = [
     trusted: false,
     tier_id: 'tier-1',
     invited_by_client_id: 'client-1',
+    invited_by_partner_id: null,
     invited_by_name: null,
     goated: false,
     needs_rewrite: false,
@@ -52,7 +54,8 @@ const sampleApps: Array<Table<'apps'>> = [
     app_type: 'bank',
     country: 'IT',
     is_active: true,
-    notes: 'Daily limit 5 signups'
+    notes: 'Daily limit 5 signups',
+    deadline_days: 7
   },
   {
     id: 'app-bybit',
@@ -60,7 +63,8 @@ const sampleApps: Array<Table<'apps'>> = [
     app_type: 'crypto',
     country: 'EU',
     is_active: true,
-    notes: 'Monitor anti-fraud requests'
+    notes: 'Monitor anti-fraud requests',
+    deadline_days: 14
   }
 ];
 
@@ -122,7 +126,11 @@ const sampleClientApps: Array<Table<'client_apps'>> = [
     started_at: now.toISOString(),
     deadline_at: null,
     completed_steps: null,
-    notes: 'Bonus expected Friday'
+    notes: 'Bonus expected Friday',
+    is_our_deposit: false,
+    deposit_source: null,
+    deposit_paid_back: false,
+    deposit_paid_back_at: null
   },
   {
     id: 'client-app-2',
@@ -142,7 +150,11 @@ const sampleClientApps: Array<Table<'client_apps'>> = [
     completed_steps: null,
     started_at: now.toISOString(),
     deadline_at: null,
-    notes: 'Awaiting futures volume'
+    notes: 'Awaiting futures volume',
+    is_our_deposit: false,
+    deposit_source: null,
+    deposit_paid_back: false,
+    deposit_paid_back_at: null
   }
 ];
 
@@ -155,7 +167,13 @@ const sampleReferralLinks: Array<Table<'referral_links'>> = [
     max_uses: 30,
     current_uses: 18,
     is_active: true,
-    notes: 'Reserve 5 slots for TOP clients'
+    notes: 'Reserve 5 slots for TOP clients',
+    account_name: null,
+    code: null,
+    status: 'active',
+    normalized_url: null,
+    url_validation_status: 'valid',
+    last_used_at: null
   },
   {
     id: 'ref-link-2',
@@ -165,7 +183,13 @@ const sampleReferralLinks: Array<Table<'referral_links'>> = [
     max_uses: 10,
     current_uses: 7,
     is_active: true,
-    notes: 'High deposit requirement'
+    notes: 'High deposit requirement',
+    account_name: null,
+    code: null,
+    status: 'active',
+    normalized_url: null,
+    url_validation_status: 'valid',
+    last_used_at: null
   }
 ];
 
@@ -194,7 +218,11 @@ const sampleRequests: Array<Table<'requests'>> = [
     notes: 'Has KYC ready',
     status: 'new',
     created_at: now.toISOString(),
-    processed_at: null
+    processed_at: null,
+    email: null,
+    request_type: null,
+    webhook_source: null,
+    webhook_payload: null
   }
 ];
 

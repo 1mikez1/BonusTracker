@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSupabaseData } from '@/lib/useSupabaseData';
 import { SectionHeader } from '@/components/SectionHeader';
 import { MetricCard } from '@/components/MetricCard';
@@ -294,7 +295,28 @@ export default function AppsPage() {
         <DataTable
           data={paginatedRows}
         columns={[
-          { key: 'name', header: 'App' },
+          { 
+            key: 'name', 
+            header: 'App',
+            render: (row) => (
+              <Link
+                href={`/apps/${row.id}`}
+                style={{
+                  color: '#3b82f6',
+                  textDecoration: 'none',
+                  fontWeight: '500'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.textDecoration = 'underline';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.textDecoration = 'none';
+                }}
+              >
+                {row.name}
+              </Link>
+            )
+          },
           { key: 'app_type', header: 'Type', render: (row) => row.app_type ?? '—' },
           { key: 'country', header: 'Country', render: (row) => row.country ?? '—' },
           {

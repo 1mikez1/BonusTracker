@@ -1766,7 +1766,7 @@ export default function RequestsPage() {
                                 <span style={{ fontWeight: 500 }}>{item.matched.name}</span>
                                 {item.requested.toLowerCase() !== item.matched.name.toLowerCase() && (
                                   <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                    (from "{item.requested}")
+                                    (from &quot;{item.requested}&quot;)
                                   </span>
                                 )}
                               </div>

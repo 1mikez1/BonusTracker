@@ -40,7 +40,7 @@ export default function DeadlinesPage() {
   });
 
   // Cast to ClientAppWithDeadline[] to include optional deadline_at field
-  const clientApps = (data || []) as ClientAppWithDeadline[];
+  const clientApps = useMemo(() => (data || []) as ClientAppWithDeadline[], [data]);
 
   // Categorize deadlines
   const categorized = useMemo(() => {

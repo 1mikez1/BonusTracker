@@ -88,6 +88,7 @@ export default function UnifiedDashboardPage() {
     order: { column: 'created_at', ascending: false }
   });
 
+
   // Calculate statistics
   const stats = useMemo(() => {
     // Handle case where errors might not be available (table doesn't exist)
@@ -212,6 +213,7 @@ export default function UnifiedDashboardPage() {
       !['completed', 'paid', 'cancelled'].includes(d.status)
     ).slice(0, 10);
   }, [deadlines]);
+
 
   // Run error detection
   const runErrorDetection = async () => {
@@ -924,6 +926,7 @@ export default function UnifiedDashboardPage() {
           ✅ Last error detection: {new Date(lastDetection).toLocaleString('it-IT')}
         </div>
       )}
+
     </div>
   );
 }

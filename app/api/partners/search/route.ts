@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabaseClient';
 
+// Force dynamic rendering since we use request.headers for rate limiting
+export const dynamic = 'force-dynamic';
+
 function sanitizeSearchInput(input: string, maxLength: number = 100): string {
   return input.trim().slice(0, maxLength);
 }
